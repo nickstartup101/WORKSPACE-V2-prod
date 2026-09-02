@@ -27,7 +27,7 @@ import {
   CreditCard
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { auth, db, handleFirestoreError, OperationType } from './firebase';
+import { auth, db, handleFirestoreError, OperationType } from '../firebase';
 import { signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged, User, signInWithEmailAndPassword, createUserWithEmailAndPassword, signInAnonymously } from 'firebase/auth';
 import { doc, onSnapshot, setDoc, serverTimestamp, collection, query, where, limit, deleteDoc } from 'firebase/firestore';
 import './i18n';
