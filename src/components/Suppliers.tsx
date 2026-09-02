@@ -1,721 +1,368 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { auth, db, handleFirestoreError, OperationType } from '../firebase';
+import { useState, useEffect, useRef } from 'react';
 import { 
-  collection, addDoc, onSnapshot, query, 
-  serverTimestamp, doc, setDoc 
-} from 'firebase/firestore';
-import { 
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
-  AreaChart, Area, LineChart, Line 
-} from 'recharts';
-import { 
-  Calculator, TrendingUp, DollarSign, Package, ShoppingBag, 
-  Layers, AlertTriangle, CheckCircle2, History, ArrowUpRight, 
-  ArrowDownRight, Info, Filter, Calendar, Download, RefreshCw, 
-  Lock, Unlock, ChevronRight, Search, Sparkles, Building2, Scale,
-  Percent, AlertCircle
+  LayoutDashboard, 
+  Truck, 
+  Wallet, 
+  Settings as SettingsIcon, 
+  Menu, 
+  X, 
+  LogOut,
+  Moon,
+  Sun,
+  Globe,
+  AlertCircle,
+  ShieldAlert,
+  Check,
+  Eye,
+  EyeOff,
+  Sparkles,
+  Store,
+  MapPin,
+  ChevronLeft,
+  ChevronRight,
+  CheckCircle,
+  PieChart,
+  Receipt,
+  FileText,
+  CreditCard
 } from 'lucide-react';
-import { format, startOfMonth, endOfMonth, subMonths } from 'date-fns';
-import { utils, writeFile } from 'xlsx';
 import { useTranslation } from 'react-i18next';
+import { auth, db, handleFirestoreError, OperationType } from './firebase';
+import { signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged, User, signInWithEmailAndPassword, createUserWithEmailAndPassword, signInAnonymously } from 'firebase/auth';
+import { doc, onSnapshot, setDoc, serverTimestamp, collection, query, where, limit, deleteDoc } from 'firebase/firestore';
+import './i18n';
 
-// 🛡️ Safe Date Normalizer
-const toStandardDate = (raw: any): string => {
-  if (!raw) return '';
-  if (typeof raw === 'string') {
-    const clean = raw.trim().split('T')[0];
-    if (clean.includes('-')) {
-      const parts = clean.split('-');
-      if (parts.length === 3) return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
-    }
-    if (clean.includes('/')) {
-      const parts = clean.split('/');
-      if (parts.length === 3 && parts[2].length === 4) return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
-    }
-    return clean;
-  }
-  if (raw && typeof raw.toDate === 'function') {
-    try { return format(raw.toDate(), 'yyyy-MM-dd'); } catch { return ''; }
-  }
-  if (raw instanceof Date && !isNaN(raw.getTime())) {
-    try { return format(raw, 'yyyy-MM-dd'); } catch { return ''; }
-  }
-  return '';
-};
+// Production Components
+import Dashboard from './components/Dashboard';
+import Suppliers from './components/Suppliers';
+import Financials from './components/Financials';
+import Settings from './components/Settings';
+import PinModal from './components/PinModal';
+import ProcurementPlanner from './components/ProcurementPlanner';
+import FinanceReport from './components/FinanceReport';
+import DebtLedger from './components/DebtLedger';
 
-const getBaseUnitConversionFactor = (unitStr: string, packSize = 1): { factor: number; baseUnit: string } => {
-  const u = (unitStr || '').trim().toLowerCase();
-  if (u === 'kg' || u === 'ກິໂລ' || u === 'ກລ') return { factor: 1000, baseUnit: 'g' };
-  if (u === 'g' || u === 'ກຣາມ') return { factor: 1, baseUnit: 'g' };
-  if (u === 'l' || u === 'litre' || u === 'liter' || u === 'ລິດ') return { factor: 1000, baseUnit: 'ml' };
-  if (u === 'ml' || u === 'ມລ') return { factor: 1, baseUnit: 'ml' };
-  if (u === 'pack' || u === 'box' || u === 'bag' || u === 'ຖົງ' || u === 'ແພັກ' || u === 'ກ່ອງ') {
-    return { factor: packSize > 1 ? packSize : 1, baseUnit: 'pcs' };
-  }
-  return { factor: 1, baseUnit: u || 'unit' };
-};
+// Premium Text Logo Component
+const TextLogo = ({ centered = false, dark = false, name = "La Dolce" }: { centered?: boolean, dark?: boolean, name?: string | null }) => (
+  <div className={`flex flex-col ${centered ? 'items-center text-center' : 'items-start text-left'} gap-2 group`}>
+    <h1 className={`text-5xl font-alice tracking-tight leading-none ${dark ? 'text-white' : 'text-[#052659] dark:text-white'}`}>
+      {name || "La Dolce"}
+    </h1>
+    
+    <div className="flex items-center justify-center gap-3 w-full">
+      <div className={`h-[1px] flex-1 min-w-[12px] opacity-20 ${dark ? 'bg-white' : 'bg-[#052659]'}`}></div>
+      <span className={`text-[9px] font-sans font-black uppercase tracking-[0.5em] ${dark ? 'text-white/60' : 'text-[#052659]/60 dark:text-white/40'}`}>
+        Workspace
+      </span>
+      <div className={`h-[1px] flex-1 min-w-[12px] opacity-20 ${dark ? 'bg-white' : 'bg-[#052659]'}`}></div>
+    </div>
+    
+    <div className={`text-[8px] font-sans font-bold uppercase tracking-[0.8em] opacity-30 mt-1 ${dark ? 'text-white' : 'text-[#052659] dark:text-white'}`}>
+       estd 2026
+    </div>
+  </div>
+);
 
-export default function CogsIntelligence({ selectedBranch, userSettings }: { selectedBranch?: string; userSettings?: any }) {
+export default function App() {
   const { t, i18n } = useTranslation();
+  const [user, setUser] = useState<User | null>(null);
+  const [activeTab, setActiveTab] = useState('dashboard');
+  const [isSidebarOpen, setIsSidebarOpen] = useState(() => typeof window !== 'undefined' ? window.innerWidth >= 1024 : true);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => typeof window !== 'undefined' ? localStorage.getItem('sidebar_collapsed') === 'true' : false);
 
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'wac_roster' | 'reconciliation'>('dashboard');
+  const toggleSidebarCollapse = () => {
+    setIsSidebarCollapsed(prev => {
+      const next = !prev;
+      localStorage.setItem('sidebar_collapsed', String(next));
+      return next;
+    });
+  };
 
-  const [products, setProducts] = useState<any[]>([]);
-  const [supplierPrices, setSupplierPrices] = useState<any[]>([]);
-  const [transactions, setTransactions] = useState<any[]>([]);
-  const [recipes, setFsRecipes] = useState<any[]>([]);
-  const [menuSales, setFsMenuSales] = useState<any[]>([]);
-  const [adjustments, setFsAdjustments] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [isFinancialUnlocked, setIsFinancialUnlocked] = useState(false);
+  const [showPinModal, setShowPinModal] = useState(false);
+  const [pinModalMode, setPinModalMode] = useState<'verify' | 'setup'>('verify');
+  const [userSettings, setUserSettings] = useState<any>(null);
+  const [adminData, setAdminData] = useState<any>(null);
+  const [appConfig, setAppConfig] = useState<any>(null);
+  const [lastActivity, setLastActivity] = useState(Date.now());
+  const [loginError, setLoginError] = useState<string | null>(null);
 
-  const [timeframePreset, setTimeframePreset] = useState<'month' | 'last_month' | 'all' | 'custom'>('month');
-  const [startDate, setStartDate] = useState(() => format(startOfMonth(new Date()), 'yyyy-MM-dd'));
-  const [endDate, setEndDate] = useState(() => format(new Date(), 'yyyy-MM-dd'));
+  const [selectedBranch, setSelectedBranch] = useState<'branch_1' | 'branch_2'>(() => {
+    return (localStorage.getItem('selected_branch') as any) || 'branch_1';
+  });
 
-  const [searchItem, setSearchItem] = useState('');
-  const [selectedWacItem, setSelectedWacItem] = useState<any | null>(null);
+  const FOUNDING_ADMINS = ['sisavanhbouddasien@gmail.com', 'tonickbouddasien@gmail.com'];
+  const isSuperAdmin = adminData?.role === 'super_admin' || (user?.email && FOUNDING_ADMINS.includes(user.email.toLowerCase()));
+  const [isDarkMode, setIsDarkMode] = useState(() => {
+    const saved = localStorage.getItem('theme');
+    return saved === 'dark' || (!saved && typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+  });
 
   useEffect(() => {
-    const branch = selectedBranch || 'branch_1';
-    setLoading(true);
+    const authUnsubscribe = onAuthStateChanged(auth, (u) => {
+      setUser(u);
+      if (u) {
+        onSnapshot(doc(db, 'settings', 'appConfig'), (snap) => {
+          if (snap.exists()) setAppConfig(snap.data());
+        });
 
-    const unsubP = onSnapshot(collection(db, 'products'), snap => {
-      setProducts(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-    }, err => handleFirestoreError(err, OperationType.LIST, 'products'));
+        onSnapshot(doc(db, 'admins', u.uid), (snap) => {
+          if (snap.exists()) setAdminData(snap.data());
+          else setAdminData(null);
+        });
 
-    const unsubS = onSnapshot(collection(db, 'supplierPrices'), snap => {
-      setSupplierPrices(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-    }, err => handleFirestoreError(err, OperationType.LIST, 'supplierPrices'));
-
-    const unsubT = onSnapshot(collection(db, 'transactions'), snap => {
-      const all = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      setTransactions(all.filter((tx: any) => (tx.branchId || 'branch_1') === branch));
-    }, err => handleFirestoreError(err, OperationType.LIST, 'transactions'));
-
-    const unsubR = onSnapshot(collection(db, 'recipes'), snap => {
-      setFsRecipes(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-    }, err => handleFirestoreError(err, OperationType.LIST, 'recipes'));
-
-    const unsubM = onSnapshot(collection(db, 'menu_sales'), snap => {
-      setFsMenuSales(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-    }, err => handleFirestoreError(err, OperationType.LIST, 'menu_sales'));
-
-    const unsubA = onSnapshot(collection(db, 'inventory'), snap => {
-      setFsAdjustments(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-      setLoading(false);
-    }, err => {
-      handleFirestoreError(err, OperationType.LIST, 'inventory');
-      setLoading(false);
+        onSnapshot(doc(db, 'users', u.uid, 'settings', 'main'), (snap) => {
+          if (snap.exists()) setUserSettings(snap.data());
+          else setUserSettings({});
+        }, (error) => {
+          if (auth.currentUser) handleFirestoreError(error, OperationType.GET, `users/${u.uid}/settings/main`);
+        });
+      } else {
+        setUserSettings(null);
+        setIsFinancialUnlocked(false);
+      }
     });
 
-    return () => {
-      unsubP();
-      unsubS();
-      unsubT();
-      unsubR();
-      unsubM();
-      unsubA();
-    };
-  }, [selectedBranch]);
+    return () => authUnsubscribe();
+  }, []);
 
-  const handlePresetSelect = (preset: 'month' | 'last_month' | 'all') => {
-    const now = new Date();
-    setTimeframePreset(preset);
-    if (preset === 'month') {
-      setStartDate(format(startOfMonth(now), 'yyyy-MM-dd'));
-      setEndDate(format(now, 'yyyy-MM-dd'));
-    } else if (preset === 'last_month') {
-      const prev = subMonths(now, 1);
-      setStartDate(format(startOfMonth(prev), 'yyyy-MM-dd'));
-      setEndDate(format(endOfMonth(prev), 'yyyy-MM-dd'));
-    } else if (preset === 'all') {
-      setStartDate('2020-01-01');
-      setEndDate(format(now, 'yyyy-MM-dd'));
+  useEffect(() => {
+    localStorage.setItem('theme', isDarkMode ? 'dark' : 'light');
+    if (isDarkMode) document.documentElement.classList.add('dark');
+    else document.documentElement.classList.remove('dark');
+  }, [isDarkMode]);
+
+  const login = async () => {
+    setLoginError(null);
+    try {
+      await signInWithPopup(auth, new GoogleAuthProvider());
+    } catch (err: any) {
+      if (err.code === 'auth/unauthorized-domain') setLoginError('unauthorized-domain');
+      else if (err.code === 'auth/popup-blocked') setLoginError('popup-blocked');
+      else setLoginError(err.message || 'unknown');
     }
   };
 
-  const wacEngineData = useMemo(() => {
-    const startRange = startDate || '2000-01-01';
-    const endRange = endDate || '2099-12-31';
+  const logout = () => signOut(auth);
 
-    const sortedPurchases = [...supplierPrices].sort((a, b) => {
-      const dateA = toStandardDate(a.date || a.createdAt);
-      const dateB = toStandardDate(b.date || b.createdAt);
-      if (dateA !== dateB) return dateA.localeCompare(dateB);
-      return String(a.time || '').localeCompare(String(b.time || ''));
-    });
+  if (!user) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen bg-[#052659] p-4 text-center relative overflow-hidden">
+        <div className="glass-card max-w-lg w-full space-y-12 animate-in fade-in zoom-in duration-1000 py-20 px-10 border-slate-200 dark:border-white/5 shadow-2xl relative overflow-hidden">
+          <TextLogo centered={true} name={appConfig?.shopName || userSettings?.shopName} />
+          <button 
+            onClick={login}
+            className="crystal-button w-full h-16 flex items-center justify-center gap-4 text-[11px] shadow-none border border-[#052659]/10 dark:border-white/10 cursor-pointer"
+          >
+            <Globe className="w-5 h-5 opacity-50" />
+            <span className="tracking-[0.2em]">{t('sign_in_google')}</span>
+          </button>
+        </div>
+      </div>
+    );
+  }
 
-    const itemLedger: { [itemId: string]: any } = {};
+  // ✅ Production Menu Items
+  const navItems = [
+    { id: 'dashboard', icon: LayoutDashboard, label: t('dashboard') },
+    { id: 'reports', icon: FileText, label: i18n.language === 'la' ? 'ບົດລາຍງານການເງິນ' : 'Financial Reports' },
+    { id: 'debts', icon: CreditCard, label: i18n.language === 'la' ? 'ໜີ້ຕ້ອງສົ່ງ & ຮັບ (AP/AR)' : 'Debt Ledger (AP/AR)' },
+    { id: 'suppliers', icon: Truck, label: t('suppliers') },
+    { id: 'planner', icon: Sparkles, label: i18n.language === 'la' ? 'ແຜນຈັດຊື້ & ບິນ' : 'Auto-Bill Planner' },
+    { id: 'financials', icon: Wallet, label: t('financials'), isSensitive: true },
+    { id: 'settings', icon: SettingsIcon, label: t('settings') },
+  ];
 
-    products.forEach(p => {
-      const baseConv = getBaseUnitConversionFactor(p.unit, p.packSize || p.boxSize || 1);
-      itemLedger[p.id] = {
-        item: p,
-        itemId: p.id,
-        itemName: p.name,
-        category: p.category || 'Raw Materials',
-        baseUnit: baseConv.baseUnit,
-        displayUnit: p.unit || 'unit',
-        
-        totalPurchasedQty: 0,
-        totalPurchasedValue: 0,
-        totalUsedQty: 0,
-        totalUsedCost: 0,
-
-        periodPurchasedQty: 0,
-        periodPurchasedValue: 0,
-        periodUsedQty: 0,
-        periodCOGS: 0,
-        openingQtyAtPeriod: 0,
-        openingWacAtPeriod: 0,
-        openingValAtPeriod: 0,
-
-        runningQty: 0,
-        runningValue: 0,
-        currentWAC: 0,
-        previousWAC: 0,
-        lastPurchaseCost: 0,
-        lastPurchaseDate: '',
-        wacHistory: []
-      };
-    });
-
-    sortedPurchases.forEach(sp => {
-      if (!sp.productId || !itemLedger[sp.productId]) return;
-      const ledger = itemLedger[sp.productId];
-      const pDate = toStandardDate(sp.date || sp.createdAt);
-
-      const qtyPacks = Number(sp.quantity) || 1;
-      const subQty = Number(sp.quantityPerUnit) || 1;
-      const totalRawUnits = qtyPacks * subQty;
-
-      const unitConv = getBaseUnitConversionFactor(sp.unit || ledger.displayUnit, subQty);
-      const normalizedPurchasedQty = unitConv.factor > 1 && unitConv.baseUnit === ledger.baseUnit
-        ? qtyPacks * unitConv.factor
-        : totalRawUnits;
-
-      const totalLAK = sp.totalPriceLAK !== undefined
-        ? Number(sp.totalPriceLAK || 0)
-        : (sp.currency === 'LAK' ? Number(sp.priceOriginal || 0) : Number(sp.priceOriginal || 0) * Number(sp.exchangeRate || 1)) * qtyPacks;
-
-      const unitCostPurchased = normalizedPurchasedQty > 0 ? totalLAK / normalizedPurchasedQty : 0;
-
-      if (pDate < startRange && ledger.openingQtyAtPeriod === 0) {
-        ledger.openingQtyAtPeriod = ledger.runningQty;
-        ledger.openingWacAtPeriod = ledger.currentWAC;
-        ledger.openingValAtPeriod = ledger.runningValue;
+  const handleTabChange = (item: any) => {
+    if (item.isSensitive && !isFinancialUnlocked) {
+      if (userSettings?.financialPin) {
+        setPinModalMode('verify');
+        setShowPinModal(true);
+        return;
+      } else if (userSettings !== null) {
+        setPinModalMode('setup');
+        setShowPinModal(true);
+        return;
       }
+    }
+    setActiveTab(item.id);
+    if (window.innerWidth < 1024) setIsSidebarOpen(false);
+  };
 
-      const prevQty = ledger.runningQty;
-      const prevWAC = ledger.currentWAC;
-      const prevVal = prevQty * prevWAC;
-
-      const newQty = prevQty + normalizedPurchasedQty;
-      const newVal = prevVal + totalLAK;
-      const newWAC = newQty > 0 ? newVal / newQty : unitCostPurchased;
-
-      ledger.previousWAC = ledger.currentWAC || newWAC;
-      ledger.currentWAC = newWAC;
-      ledger.runningQty = newQty;
-      ledger.runningValue = newQty * newWAC;
-      ledger.lastPurchaseCost = unitCostPurchased;
-      ledger.lastPurchaseDate = pDate;
-      ledger.totalPurchasedQty += normalizedPurchasedQty;
-      ledger.totalPurchasedValue += totalLAK;
-
-      if (pDate >= startRange && pDate <= endRange) {
-        ledger.periodPurchasedQty += normalizedPurchasedQty;
-        ledger.periodPurchasedValue += totalLAK;
+  const handlePinSuccess = async (newPin?: string) => {
+    if (pinModalMode === 'setup' && newPin) {
+      try {
+        await setDoc(doc(db, 'users', user?.uid!, 'settings', 'main'), {
+          financialPin: newPin,
+          updatedAt: serverTimestamp()
+        }, { merge: true });
+      } catch (e) {
+        handleFirestoreError(e, OperationType.WRITE, `users/${user?.uid}/settings/main`);
+        return;
       }
-
-      ledger.wacHistory.push({
-        date: pDate,
-        type: 'PURCHASE',
-        supplier: sp.supplier || 'Vendor',
-        billNo: sp.billNo || '-',
-        qtyAdded: normalizedPurchasedQty,
-        unitCost: unitCostPurchased,
-        purchaseVal: totalLAK,
-        resultingQty: newQty,
-        resultingWAC: newWAC,
-        resultingVal: ledger.runningValue
-      });
-    });
-
-    menuSales.forEach(sale => {
-      const sDate = toStandardDate(sale.date || sale.createdAt);
-      const itemsSold = sale.itemsSold || {};
-
-      Object.entries(itemsSold).forEach(([recipeId, qtySold]) => {
-        const count = Number(qtySold) || 0;
-        if (count <= 0) return;
-
-        const recipe = recipes.find(r => r.id === recipeId);
-        if (!recipe) return;
-
-        (recipe.ingredients || []).forEach((ing: any) => {
-          if (!ing.productId || !itemLedger[ing.productId]) return;
-          const ledger = itemLedger[ing.productId];
-
-          const baseAmount = Number(ing.amount) || 0;
-          const totalUsed = baseAmount * count;
-
-          const currentWAC = ledger.currentWAC || ledger.lastPurchaseCost || 0;
-          const cogsGenerated = totalUsed * currentWAC;
-
-          ledger.runningQty -= totalUsed;
-          ledger.runningValue = Math.max(0, ledger.runningQty * currentWAC);
-          ledger.totalUsedQty += totalUsed;
-          ledger.totalUsedCost += cogsGenerated;
-
-          if (sDate >= startRange && sDate <= endRange) {
-            ledger.periodUsedQty += totalUsed;
-            ledger.periodCOGS += cogsGenerated;
-          }
-
-          ledger.wacHistory.push({
-            date: sDate,
-            type: 'SALES_COGS',
-            supplier: recipe.menuName || 'Menu Sale',
-            billNo: `QTY:${count}`,
-            qtyAdded: -totalUsed,
-            unitCost: currentWAC,
-            purchaseVal: cogsGenerated,
-            resultingQty: ledger.runningQty,
-            resultingWAC: currentWAC,
-            resultingVal: ledger.runningValue
-          });
-        });
-      });
-    });
-
-    let periodRevenue = 0;
-    let periodOpex = 0;
-
-    transactions.forEach(tx => {
-      const dStr = toStandardDate(tx.date || tx.createdAt);
-      if (dStr >= startRange && dStr <= endRange) {
-        const amt = Number(tx.amount) || 0;
-        if (tx.type === 'income' || String(tx.category || '').toLowerCase() === 'sales') {
-          periodRevenue += amt;
-        } else {
-          const cat = String(tx.category || '').toLowerCase();
-          const isPurchase = cat.includes('purchas') || cat.includes('supply') || cat.includes('ຊື້');
-          if (!isPurchase) {
-            periodOpex += amt;
-          }
-        }
-      }
-    });
-
-    const allItems = Object.values(itemLedger);
-    const totalInventoryValuation = allItems.reduce((acc, it) => acc + Math.max(0, it.runningValue), 0);
-    const periodTotalPurchases = allItems.reduce((acc, it) => acc + it.periodPurchasedValue, 0);
-    const periodActualCOGS = allItems.reduce((acc, it) => acc + it.periodCOGS, 0);
-
-    const openingInventoryVal = allItems.reduce((acc, it) => acc + it.openingValAtPeriod, 0);
-    const closingInventoryVal = totalInventoryValuation;
-
-    const expectedReconciledCOGS = Math.max(0, openingInventoryVal + periodTotalPurchases - closingInventoryVal);
-    const cogsVariance = periodActualCOGS - expectedReconciledCOGS;
-
-    const grossProfit = periodRevenue - periodActualCOGS;
-    const grossMargin = periodRevenue > 0 ? (grossProfit / periodRevenue) * 100 : 0;
-    const cogsRatio = periodRevenue > 0 ? (periodActualCOGS / periodRevenue) * 100 : 0;
-    const netProfit = grossProfit - periodOpex;
-
-    return {
-      itemsList: allItems,
-      totalInventoryValuation,
-      periodTotalPurchases,
-      periodActualCOGS,
-      periodRevenue,
-      periodOpex,
-      grossProfit,
-      grossMargin,
-      cogsRatio,
-      netProfit,
-      openingInventoryVal,
-      closingInventoryVal,
-      expectedReconciledCOGS,
-      cogsVariance,
-      startRange,
-      endRange
-    };
-  }, [products, supplierPrices, recipes, menuSales, adjustments, transactions, startDate, endDate]);
+    }
+    setIsFinancialUnlocked(true);
+    setShowPinModal(false);
+    setActiveTab('financials');
+  };
 
   return (
-    <div className="space-y-6">
+    <div className="min-h-screen flex transition-colors duration-300">
+      {isSidebarOpen && (
+        <div 
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-45 lg:hidden animate-in fade-in duration-200"
+          onClick={() => setIsSidebarOpen(false)}
+        />
+      )}
 
-      {/* Header Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 bg-white dark:bg-[#073069] rounded-[2rem] border border-slate-200/80 dark:border-white/10 shadow-sm">
-        <div className="flex items-center gap-3.5">
-          <div className="w-12 h-12 rounded-2xl bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
-            <Scale className="w-6 h-6 animate-pulse" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-sm font-black uppercase tracking-wider text-slate-900 dark:text-white">
-                {i18n.language === 'la' ? 'ໂມດູນຕົ້ນທຶນສະເລ່ຍ WAC & COGS' : 'WAC & COGS Financial Intelligence'}
-              </h2>
-              <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20">
-                {selectedBranch === 'branch_1' ? 'Branch 1' : 'Branch 2'}
-              </span>
+      {/* Sidebar */}
+      <aside className={`
+        fixed inset-y-0 left-0 z-50 bg-[#052659] text-white transition-all duration-300 flex flex-col h-screen
+        ${isSidebarCollapsed ? 'lg:w-20' : 'lg:w-60'} w-56
+        ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
+      `}>
+        <div className={`border-b border-white/5 bg-black/5 flex items-center ${isSidebarCollapsed ? 'justify-center px-2 py-4' : 'justify-between p-6'} gap-2 shrink-0`}>
+          {!isSidebarCollapsed ? (
+            <div className="flex-1 overflow-hidden">
+              <TextLogo dark={true} centered={true} name={appConfig?.shopName || userSettings?.shopName} />
             </div>
-            <p className="text-[10px] text-slate-400 font-bold uppercase mt-0.5">
-              {wacEngineData.startRange} ➔ {wacEngineData.endRange}
-            </p>
-          </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center p-2 rounded-xl bg-white/5 border border-white/15 w-12 h-12 shrink-0">
+              <span className="text-[16px] font-alice font-bold text-white leading-none">LD</span>
+            </div>
+          )}
+          <button onClick={() => setIsSidebarOpen(false)} className="lg:hidden p-2 text-white/60 hover:text-white rounded-xl cursor-pointer">
+            <X className="w-5 h-5" />
+          </button>
         </div>
 
-        {/* Preset Range & Date Picker */}
-        <div className="flex items-center gap-2 flex-wrap">
-          <div className="flex items-center gap-1 bg-slate-50 dark:bg-white/5 px-2.5 py-1 rounded-xl border border-slate-200 dark:border-white/10 text-xs">
-            <input
-              type="date"
-              value={startDate}
-              onChange={e => {
-                setStartDate(toStandardDate(e.target.value));
-                setTimeframePreset('custom');
-              }}
-              className="bg-transparent text-xs font-bold outline-none cursor-pointer"
-            />
-            <span className="text-slate-400 font-bold">➔</span>
-            <input
-              type="date"
-              value={endDate}
-              onChange={e => {
-                setEndDate(toStandardDate(e.target.value));
-                setTimeframePreset('custom');
-              }}
-              className="bg-transparent text-xs font-bold outline-none cursor-pointer"
-            />
-          </div>
-
-          <div className="flex bg-slate-100 dark:bg-black/25 p-1 rounded-xl">
+        <nav className="flex-1 overflow-y-auto p-3 space-y-1 mt-4">
+          {navItems.map((item) => (
             <button
-              onClick={() => handlePresetSelect('month')}
-              className={`px-3 py-1 text-[10px] font-black uppercase rounded-lg transition-all ${
-                timeframePreset === 'month' ? 'bg-[#052659] text-white shadow-xs' : 'text-slate-500'
-              }`}
+              key={item.id}
+              onClick={() => handleTabChange(item)}
+              title={isSidebarCollapsed ? item.label : undefined}
+              className={`
+                w-full flex items-center ${isSidebarCollapsed ? 'justify-center px-0' : 'justify-start px-4'} py-3 rounded-xl text-[12px] font-bold uppercase tracking-wider transition-all duration-300 cursor-pointer
+                ${activeTab === item.id 
+                  ? 'bg-white/10 text-white shadow-[0_8px_16px_-4px_rgba(0,0,0,0.3)] border border-white/10 backdrop-blur-md' 
+                  : 'text-white/40 hover:bg-white/5 hover:text-white'}
+              `}
             >
-              {i18n.language === 'la' ? 'ເດືອນນີ້' : 'This Month'}
+              <item.icon className="w-4 h-4 shrink-0" />
+              {!isSidebarCollapsed && <span className="truncate ml-3">{item.label}</span>}
             </button>
-            <button
-              onClick={() => handlePresetSelect('last_month')}
-              className={`px-3 py-1 text-[10px] font-black uppercase rounded-lg transition-all ${
-                timeframePreset === 'last_month' ? 'bg-[#052659] text-white shadow-xs' : 'text-slate-500'
-              }`}
-            >
-              {i18n.language === 'la' ? 'ເດືອນກ່ອນ' : 'Last Month'}
-            </button>
-            <button
-              onClick={() => handlePresetSelect('all')}
-              className={`px-3 py-1 text-[10px] font-black uppercase rounded-lg transition-all ${
-                timeframePreset === 'all' ? 'bg-[#052659] text-white shadow-xs' : 'text-slate-500'
-              }`}
-            >
-              {i18n.language === 'la' ? 'ທັງໝົດ' : 'All'}
-            </button>
-          </div>
-        </div>
-      </div>
+          ))}
+        </nav>
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-6 gap-4">
-        <div className="bg-white dark:bg-[#073069] p-4 sm:p-5 rounded-3xl border border-slate-200/80 dark:border-white/10 shadow-sm space-y-1">
-          <span className="text-[9.5px] font-black uppercase text-slate-400 flex items-center gap-1">
-            <ArrowUpRight className="w-3.5 h-3.5 text-emerald-500" />
-            Revenue
-          </span>
-          <p className="text-xl font-black font-mono text-emerald-600 dark:text-emerald-400">
-            {Math.round(wacEngineData.periodRevenue).toLocaleString()} ₭
-          </p>
-        </div>
-
-        <div className="bg-white dark:bg-[#073069] p-4 sm:p-5 rounded-3xl border border-slate-200/80 dark:border-white/10 shadow-sm space-y-1">
-          <span className="text-[9.5px] font-black uppercase text-slate-400 flex items-center gap-1">
-            <ArrowDownRight className="w-3.5 h-3.5 text-rose-500" />
-            COGS (WAC)
-          </span>
-          <p className="text-xl font-black font-mono text-rose-500 dark:text-rose-400">
-            {Math.round(wacEngineData.periodActualCOGS).toLocaleString()} ₭
-          </p>
-        </div>
-
-        <div className="bg-white dark:bg-[#073069] p-4 sm:p-5 rounded-3xl border border-slate-200/80 dark:border-white/10 shadow-sm space-y-1">
-          <span className="text-[9.5px] font-black uppercase text-slate-400 flex items-center gap-1">
-            <Percent className="w-3.5 h-3.5 text-blue-500" />
-            Gross Margin
-          </span>
-          <p className="text-xl font-black font-mono text-blue-600 dark:text-blue-400">
-            {wacEngineData.grossMargin.toFixed(1)}%
-          </p>
-        </div>
-
-        <div className="bg-white dark:bg-[#073069] p-4 sm:p-5 rounded-3xl border border-slate-200/80 dark:border-white/10 shadow-sm space-y-1">
-          <span className="text-[9.5px] font-black uppercase text-slate-400">
-            COGS Ratio
-          </span>
-          <p className="text-xl font-black font-mono text-amber-600 dark:text-amber-400">
-            {wacEngineData.cogsRatio.toFixed(1)}%
-          </p>
-        </div>
-
-        <div className="bg-white dark:bg-[#073069] p-4 sm:p-5 rounded-3xl border border-slate-200/80 dark:border-white/10 shadow-sm space-y-1">
-          <span className="text-[9.5px] font-black uppercase text-indigo-500 flex items-center gap-1">
-            <Package className="w-3.5 h-3.5" />
-            Inventory Asset
-          </span>
-          <p className="text-xl font-black font-mono text-indigo-600 dark:text-indigo-400">
-            {Math.round(wacEngineData.totalInventoryValuation).toLocaleString()} ₭
-          </p>
-        </div>
-
-        <div className="bg-white dark:bg-[#073069] p-4 sm:p-5 rounded-3xl border border-slate-200/80 dark:border-white/10 shadow-sm space-y-1">
-          <span className="text-[9.5px] font-black uppercase text-slate-400 flex items-center gap-1">
-            <ShoppingBag className="w-3.5 h-3.5" />
-            Purchases
-          </span>
-          <p className="text-xl font-black font-mono text-slate-800 dark:text-white">
-            {Math.round(wacEngineData.periodTotalPurchases).toLocaleString()} ₭
-          </p>
-        </div>
-      </div>
-
-      {/* Navigation Sub-Tabs */}
-      <div className="flex gap-2 border-b border-slate-200 dark:border-white/10 pb-3">
-        <button
-          onClick={() => setActiveTab('dashboard')}
-          className={`px-4 py-2 rounded-xl text-xs font-black uppercase transition-all ${
-            activeTab === 'dashboard' ? 'bg-[#052659] text-white shadow-md' : 'text-slate-500 hover:text-slate-800 dark:text-slate-400'
-          }`}
-        >
-          1. COGS Analytics
-        </button>
-        <button
-          onClick={() => setActiveTab('wac_roster')}
-          className={`px-4 py-2 rounded-xl text-xs font-black uppercase transition-all ${
-            activeTab === 'wac_roster' ? 'bg-[#052659] text-white shadow-md' : 'text-slate-500 hover:text-slate-800 dark:text-slate-400'
-          }`}
-        >
-          2. WAC Valuation Roster
-        </button>
-        <button
-          onClick={() => setActiveTab('reconciliation')}
-          className={`px-4 py-2 rounded-xl text-xs font-black uppercase transition-all ${
-            activeTab === 'reconciliation' ? 'bg-[#052659] text-white shadow-md' : 'text-slate-500 hover:text-slate-800 dark:text-slate-400'
-          }`}
-        >
-          3. Reconciliation & Variance
-        </button>
-      </div>
-
-      {/* TAB 1: COGS Analytics */}
-      {activeTab === 'dashboard' && (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          <div className="lg:col-span-12 p-4 bg-indigo-500/5 dark:bg-indigo-500/10 border border-indigo-500/20 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-indigo-500 text-white rounded-xl">
-                <Info className="w-5 h-5" />
+        <div className="p-4 border-t border-white/10 bg-black/20 mt-auto shrink-0 flex flex-col gap-4">
+          <div className={`flex items-center ${isSidebarCollapsed ? 'justify-center' : 'gap-3'} overflow-hidden`}>
+            <img src={user.photoURL || ''} alt="User" className="w-8 h-8 rounded-full border border-white/20 shrink-0" />
+            {!isSidebarCollapsed && (
+              <div className="overflow-hidden">
+                <p className="text-xs font-bold truncate">{user.displayName}</p>
+                <p className="text-[10px] opacity-40 truncate uppercase font-bold tracking-tighter">{t('admin_session')}</p>
               </div>
-              <div className="text-xs">
-                <p className="font-black text-indigo-900 dark:text-indigo-300 uppercase">
-                  {i18n.language === 'la' ? 'ຫຼັກການບັນຊີ: Purchases (ຈັດຊື້) ≠ COGS (ຕົ້ນທຶນທີ່ຂາຍໄປ)' : 'Purchases ≠ COGS'}
-                </p>
-                <p className="text-slate-600 dark:text-slate-300 text-[11px] mt-0.5">
-                  {i18n.language === 'la'
-                    ? `ຍອດຈັດຊື້ ${Math.round(wacEngineData.periodTotalPurchases).toLocaleString()} ₭ ເປັນມູນຄ່າສິນຄ້າໃນສາງ. ສ່ວນ COGS (${Math.round(wacEngineData.periodActualCOGS).toLocaleString()} ₭) ແມ່ນຄິດໄລ່ສະເພາະວັດຖຸດິບທີ່ຖືກຂາຍ/ໃຊ້ໄປຕົວຈິງ.`
-                    : `Purchases represent inventory stock. Real COGS is only what was consumed during operations.`}
-                </p>
+            )}
+          </div>
+          
+          <div className={`flex ${isSidebarCollapsed ? 'flex-col items-center' : 'items-center'} gap-2`}>
+            <button
+              onClick={toggleSidebarCollapse}
+              className="hidden lg:flex items-center justify-center p-2 text-white/40 hover:text-white hover:bg-white/5 rounded-xl cursor-pointer"
+            >
+              {isSidebarCollapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
+            </button>
+            <button 
+              onClick={logout}
+              className={`flex items-center justify-center gap-2 py-2 text-[11px] font-bold uppercase text-red-300 hover:text-red-400 hover:bg-white/5 rounded-xl cursor-pointer ${isSidebarCollapsed ? 'w-full' : 'flex-1'}`}
+            >
+              <LogOut className="w-3.5 h-3.5 shrink-0" />
+              {!isSidebarCollapsed && <span>{t('logout')}</span>}
+            </button>
+          </div>
+        </div>
+      </aside>
+
+      <div className={`hidden lg:block transition-all duration-300 shrink-0 ${isSidebarCollapsed ? 'w-20' : 'w-60'}`} />
+
+      {/* Main Content */}
+      <main className="flex-1 flex flex-col min-w-0 bg-transparent overflow-hidden">
+        <header className="h-14 bg-[#052659] text-white border-b border-white/10 px-4 lg:px-6 flex items-center justify-between sticky top-0 z-40 shadow-md">
+          <div className="flex items-center gap-4">
+            <button onClick={() => setIsSidebarOpen(true)} className="lg:hidden p-2 hover:bg-white/10 rounded-lg">
+              <Menu className="w-5 h-5 text-white" />
+            </button>
+            <div className="flex items-center gap-2 text-[10px] font-black text-white/40 uppercase tracking-[0.2em]">
+              <span>{t('home')}</span>
+              <span className="text-white/20">/</span>
+              <span className="text-white/80">{activeTab}</span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <div className="relative group">
+              <button className="h-9 px-3 bg-white/10 hover:bg-white/15 rounded-xl flex items-center gap-2 border border-white/5 cursor-pointer">
+                <Store className="w-3.5 h-3.5 text-blue-300" />
+                <span className="text-[10px] font-black uppercase text-white">
+                  {selectedBranch === 'branch_1' ? 'ສາຂາ 1 (ນະຄອນຫຼວງ)' : 'ສາຂາ 2 (ຫຼວງພະບາງ)'}
+                </span>
+                <span className="text-[8px] opacity-40">▼</span>
+              </button>
+              <div className="absolute right-0 mt-1 w-48 bg-white dark:bg-[#073069] border border-slate-100 dark:border-white/10 rounded-2xl shadow-xl py-2 hidden group-hover:block hover:block z-50 text-slate-800 dark:text-white">
+                <button
+                  onClick={() => { setSelectedBranch('branch_1'); localStorage.setItem('selected_branch', 'branch_1'); }}
+                  className={`w-full text-left px-4 py-2.5 text-xs font-bold flex items-center gap-2 cursor-pointer ${selectedBranch === 'branch_1' ? 'bg-blue-500/10 text-blue-600 dark:text-blue-300' : 'text-slate-700 dark:text-slate-300 hover:bg-slate-50'}`}
+                >
+                  <MapPin className="w-3.5 h-3.5" />
+                  <span>ສາຂາ 1 (ນະຄອນຫຼວງ)</span>
+                </button>
+                <button
+                  onClick={() => { setSelectedBranch('branch_2'); localStorage.setItem('selected_branch', 'branch_2'); }}
+                  className={`w-full text-left px-4 py-2.5 text-xs font-bold flex items-center gap-2 cursor-pointer ${selectedBranch === 'branch_2' ? 'bg-blue-500/10 text-blue-600 dark:text-blue-300' : 'text-slate-700 dark:text-slate-300 hover:bg-slate-50'}`}
+                >
+                  <MapPin className="w-3.5 h-3.5" />
+                  <span>ສາຂາ 2 (ຫຼວງພະບາງ)</span>
+                </button>
               </div>
             </div>
-          </div>
 
-          <div className="lg:col-span-6 bg-white dark:bg-[#073069] p-5 sm:p-6 rounded-3xl border border-slate-200/80 dark:border-white/10 shadow-xl space-y-4">
-            <div className="flex justify-between items-center border-b border-slate-100 dark:border-white/10 pb-3">
-              <h3 className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-white flex items-center gap-2">
-                <TrendingUp className="w-4 h-4 text-rose-500" />
-                <span>Top 5 COGS Drivers</span>
-              </h3>
-            </div>
-            <div className="space-y-3">
-              {[...wacEngineData.itemsList]
-                .sort((a, b) => b.periodCOGS - a.periodCOGS)
-                .slice(0, 5)
-                .map((it, idx) => (
-                  <div key={it.itemId} className="p-3 bg-slate-50 dark:bg-white/5 rounded-2xl space-y-1">
-                    <div className="flex justify-between items-center text-xs font-bold">
-                      <span className="text-slate-800 dark:text-white">{idx + 1}. {it.itemName}</span>
-                      <span className="font-mono text-rose-600 dark:text-rose-400">
-                        {Math.round(it.periodCOGS).toLocaleString()} ₭
-                      </span>
-                    </div>
-                  </div>
-                ))}
-            </div>
+            <button 
+              onClick={() => i18n.changeLanguage(i18n.language === 'la' ? 'en' : 'la')}
+              className="p-2 hover:bg-white/10 rounded-md text-white flex items-center gap-2 text-[10px] font-black uppercase cursor-pointer"
+            >
+              <Globe className="w-4 h-4 text-white/60" />
+              <span>{i18n.language === 'la' ? 'LA' : 'EN'}</span>
+            </button>
+            <button 
+              onClick={() => setIsDarkMode(!isDarkMode)}
+              className="p-2 hover:bg-white/10 rounded-md text-white flex items-center gap-2 cursor-pointer"
+            >
+              {isDarkMode ? <Sun className="w-4 h-4 text-yellow-400" /> : <Moon className="w-4 h-4 text-blue-300" />}
+            </button>
           </div>
+        </header>
 
-          <div className="lg:col-span-6 bg-white dark:bg-[#073069] p-5 sm:p-6 rounded-3xl border border-slate-200/80 dark:border-white/10 shadow-xl space-y-4">
-            <div className="flex justify-between items-center border-b border-slate-100 dark:border-white/10 pb-3">
-              <h3 className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-white flex items-center gap-2">
-                <AlertTriangle className="w-4 h-4 text-amber-500" />
-                <span>WAC Cost Inflation Warnings</span>
-              </h3>
-            </div>
-            <div className="space-y-3">
-              {[...wacEngineData.itemsList]
-                .filter(it => it.previousWAC > 0 && it.currentWAC > it.previousWAC)
-                .slice(0, 5)
-                .map(it => (
-                  <div key={it.itemId} className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-2xl flex justify-between items-center">
-                    <div>
-                      <p className="text-xs font-bold text-slate-800 dark:text-white">{it.itemName}</p>
-                      <p className="text-[9.5px] text-slate-400">
-                        {Math.round(it.previousWAC).toLocaleString()} ➔ {Math.round(it.currentWAC).toLocaleString()} ₭
-                      </p>
-                    </div>
-                    <span className="px-2 py-0.5 bg-amber-500 text-white rounded text-[10px] font-black uppercase">
-                      +{(Math.abs((it.currentWAC - it.previousWAC) / it.previousWAC) * 100).toFixed(1)}% UP
-                    </span>
-                  </div>
-                ))}
-            </div>
+        <div className="flex-1 p-4 lg:p-6 overflow-y-auto bg-gradient-to-br from-[#f8fafc] to-[#f1f5f9] dark:from-[#052659] dark:to-[#073069]">
+          <div className="max-w-7xl mx-auto space-y-6">
+            {activeTab === 'dashboard' && <Dashboard userSettings={userSettings} user={user} selectedBranch={selectedBranch} />}
+            {activeTab === 'reports' && <FinanceReport selectedBranch={selectedBranch} />}
+            {activeTab === 'debts' && <DebtLedger selectedBranch={selectedBranch} />}
+            {activeTab === 'suppliers' && <Suppliers />}
+            {activeTab === 'planner' && <ProcurementPlanner selectedBranch={selectedBranch} />}
+            {activeTab === 'financials' && <Financials appConfig={appConfig} selectedBranch={selectedBranch} />}
+            {activeTab === 'settings' && <Settings user={user} isDarkMode={isDarkMode} setIsDarkMode={setIsDarkMode} userSettings={userSettings} isSuperAdmin={isSuperAdmin} appConfig={appConfig} selectedBranch={selectedBranch} />}
           </div>
         </div>
-      )}
 
-      {/* TAB 2: WAC Valuation Roster */}
-      {activeTab === 'wac_roster' && (
-        <div className="high-density-card bg-white dark:bg-[#073069] p-5 sm:p-6 rounded-3xl border border-slate-200/80 dark:border-white/10 shadow-xl space-y-4">
-          <div className="flex justify-between items-center gap-3 border-b border-slate-100 dark:border-white/10 pb-4">
-            <div className="relative max-w-xs w-full">
-              <input
-                type="text"
-                placeholder="Search raw materials..."
-                value={searchItem}
-                onChange={e => setSearchItem(e.target.value)}
-                className="w-full h-9 pl-8 pr-3 bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl text-xs outline-none"
-              />
-              <Search className="absolute left-2.5 top-2.5 w-3.5 h-3.5 text-slate-400" />
-            </div>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="text-[9.5px] font-bold uppercase tracking-wider text-slate-400 bg-slate-100/50 dark:bg-white/5">
-                <tr>
-                  <th className="p-3.5">Material Name</th>
-                  <th className="p-3.5">Category</th>
-                  <th className="p-3.5 text-right">Current Stock</th>
-                  <th className="p-3.5 text-right">WAC Unit Cost</th>
-                  <th className="p-3.5 text-right">Last Purchase Cost</th>
-                  <th className="p-3.5 text-right">Inventory Valuation</th>
-                  <th className="p-3.5 text-center">Audit</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-white/5">
-                {wacEngineData.itemsList
-                  .filter(it => it.itemName.toLowerCase().includes(searchItem.toLowerCase()))
-                  .map(it => (
-                    <tr key={it.itemId} className="hover:bg-slate-50 dark:hover:bg-white/5 transition-all">
-                      <td className="p-3.5 font-bold text-slate-800 dark:text-white">{it.itemName}</td>
-                      <td className="p-3.5 text-slate-500">{it.category}</td>
-                      <td className="p-3.5 text-right font-mono font-bold">
-                        {it.runningQty.toLocaleString()} {it.baseUnit}
-                      </td>
-                      <td className="p-3.5 text-right font-mono font-black text-indigo-600 dark:text-indigo-400">
-                        {Math.round(it.currentWAC).toLocaleString()} ₭/{it.baseUnit}
-                      </td>
-                      <td className="p-3.5 text-right font-mono text-slate-500">
-                        {Math.round(it.lastPurchaseCost).toLocaleString()} ₭
-                      </td>
-                      <td className="p-3.5 text-right font-mono font-black text-slate-900 dark:text-white">
-                        {Math.round(it.runningValue).toLocaleString()} ₭
-                      </td>
-                      <td className="p-3.5 text-center">
-                        <button
-                          type="button"
-                          onClick={() => setSelectedWacItem(it)}
-                          className="px-2.5 py-1 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 rounded-lg text-[9.5px] font-black uppercase transition-all cursor-pointer"
-                        >
-                          History
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* TAB 3: Reconciliation */}
-      {activeTab === 'reconciliation' && (
-        <div className="bg-white dark:bg-[#073069] p-5 sm:p-6 rounded-3xl border border-slate-200/80 dark:border-white/10 shadow-xl space-y-5">
-          <div className="flex justify-between items-center border-b border-slate-100 dark:border-white/10 pb-3">
-            <h3 className="text-xs font-black uppercase text-slate-800 dark:text-white">COGS Variance Reconciliation</h3>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div className="p-4 bg-slate-50 dark:bg-white/5 rounded-2xl space-y-1">
-              <span className="text-[9.5px] font-black uppercase text-slate-400">Opening Value</span>
-              <p className="text-lg font-mono font-black">{Math.round(wacEngineData.openingInventoryVal).toLocaleString()} ₭</p>
-            </div>
-            <div className="p-4 bg-slate-50 dark:bg-white/5 rounded-2xl space-y-1">
-              <span className="text-[9.5px] font-black uppercase text-emerald-500">+ Purchases</span>
-              <p className="text-lg font-mono font-black text-emerald-600">+{Math.round(wacEngineData.periodTotalPurchases).toLocaleString()} ₭</p>
-            </div>
-            <div className="p-4 bg-slate-50 dark:bg-white/5 rounded-2xl space-y-1">
-              <span className="text-[9.5px] font-black uppercase text-indigo-500">- Closing Value</span>
-              <p className="text-lg font-mono font-black text-indigo-600">-{Math.round(wacEngineData.closingInventoryVal).toLocaleString()} ₭</p>
-            </div>
-            <div className="p-4 bg-indigo-500/10 border border-indigo-500/20 rounded-2xl space-y-1">
-              <span className="text-[9.5px] font-black uppercase text-indigo-600">= Expected COGS</span>
-              <p className="text-lg font-mono font-black text-indigo-600">{Math.round(wacEngineData.expectedReconciledCOGS).toLocaleString()} ₭</p>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* History Modal */}
-      {selectedWacItem && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
-          <div className="bg-white dark:bg-[#073069] w-full max-w-3xl rounded-3xl p-6 shadow-2xl border border-white/10 flex flex-col max-h-[85vh] space-y-4">
-            <div className="flex justify-between items-center border-b border-slate-100 dark:border-white/10 pb-3">
-              <h3 className="text-sm font-black uppercase text-slate-800 dark:text-white">
-                WAC History: {selectedWacItem.itemName}
-              </h3>
-              <button type="button" onClick={() => setSelectedWacItem(null)}><X className="w-5 h-5 text-slate-400" /></button>
-            </div>
-            <div className="flex-1 overflow-y-auto pr-1">
-              <table className="w-full text-left text-xs">
-                <thead className="text-[9px] font-bold uppercase text-slate-400 bg-slate-100/50 dark:bg-white/5">
-                  <tr>
-                    <th className="p-2.5">Date</th>
-                    <th className="p-2.5">Activity</th>
-                    <th className="p-2.5 text-right">Quantity</th>
-                    <th className="p-2.5 text-right">Resulting WAC</th>
-                    <th className="p-2.5 text-right">Valuation</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-white/5">
-                  {(selectedWacItem.wacHistory || []).map((step: any, idx: number) => (
-                    <tr key={idx}>
-                      <td className="p-2.5 font-mono text-slate-400">{step.date}</td>
-                      <td className="p-2.5">{step.type} ({step.supplier})</td>
-                      <td className="p-2.5 text-right font-mono">{step.qtyAdded}</td>
-                      <td className="p-2.5 text-right font-mono font-black text-indigo-600">{Math.round(step.resultingWAC).toLocaleString()} ₭</td>
-                      <td className="p-2.5 text-right font-mono font-bold">{Math.round(step.resultingVal).toLocaleString()} ₭</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      )}
-
+        <PinModal 
+          isOpen={showPinModal} 
+          onClose={() => setShowPinModal(false)} 
+          correctPin={userSettings?.financialPin}
+          mode={pinModalMode}
+          onSuccess={handlePinSuccess}
+        />
+      </main>
     </div>
   );
 }
