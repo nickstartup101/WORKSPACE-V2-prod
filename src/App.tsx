@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
 import { 
   LayoutDashboard, 
   Truck, 
@@ -14,8 +13,6 @@ import {
   AlertCircle,
   ShieldAlert,
   Check,
-  Coffee,
-  PawPrint,
   Eye,
   EyeOff,
   Sparkles,
@@ -25,15 +22,17 @@ import {
   ChevronRight,
   CheckCircle,
   PieChart,
-  Receipt
+  Receipt,
+  FileText,
+  CreditCard
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { auth, db, handleFirestoreError, OperationType } from './firebase';
 import { signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged, User, signInWithEmailAndPassword, createUserWithEmailAndPassword, signInAnonymously } from 'firebase/auth';
-import { doc, onSnapshot, setDoc, serverTimestamp, collection, query, where, orderBy, limit, deleteDoc } from 'firebase/firestore';
+import { doc, onSnapshot, setDoc, serverTimestamp, collection, query, where, limit, deleteDoc } from 'firebase/firestore';
 import './i18n';
 
-// Components
+// Production Components
 import Dashboard from './components/Dashboard';
 import Suppliers from './components/Suppliers';
 import Financials from './components/Financials';
@@ -68,18 +67,9 @@ export default function App() {
   const { t, i18n } = useTranslation();
   const [user, setUser] = useState<User | null>(null);
   const [activeTab, setActiveTab] = useState('dashboard');
-  const [isSidebarOpen, setIsSidebarOpen] = useState(() => {
-    if (typeof window !== 'undefined') {
-      return window.innerWidth >= 1024;
-    }
-    return true;
-  });
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('sidebar_collapsed') === 'true';
-    }
-    return false;
-  });
+  const [isSidebarOpen, setIsSidebarOpen] = useState(() => typeof window !== 'undefined' ? window.innerWidth >= 1024 : true);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => typeof window !== 'undefined' ? localStorage.getItem('sidebar_collapsed') === 'true' : false);
+
   const toggleSidebarCollapse = () => {
     setIsSidebarCollapsed(prev => {
       const next = !prev;
@@ -87,6 +77,7 @@ export default function App() {
       return next;
     });
   };
+
   const [isFinancialUnlocked, setIsFinancialUnlocked] = useState(false);
   const [showPinModal, setShowPinModal] = useState(false);
   const [pinModalMode, setPinModalMode] = useState<'verify' | 'setup'>('verify');
@@ -94,162 +85,52 @@ export default function App() {
   const [adminData, setAdminData] = useState<any>(null);
   const [appConfig, setAppConfig] = useState<any>(null);
   const [lastActivity, setLastActivity] = useState(Date.now());
-  const [activeApprovalRequest, setActiveApprovalRequest] = useState<any>(null);
   const [loginError, setLoginError] = useState<string | null>(null);
-  const [isDemoLocal, setIsDemoLocal] = useState(false);
-  const [demoLoading, setDemoLoading] = useState(false);
-  const isDemoLocalRef = useRef(false);
-
-  useEffect(() => {
-    isDemoLocalRef.current = isDemoLocal;
-  }, [isDemoLocal]);
 
   const [selectedBranch, setSelectedBranch] = useState<'branch_1' | 'branch_2'>(() => {
     return (localStorage.getItem('selected_branch') as any) || 'branch_1';
   });
 
-  const [scannedBillData, setScannedBillData] = useState<any>(null);
-
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const verifyBillParam = params.get('verifyBill');
-    if (verifyBillParam) {
-      try {
-        const decoded = decodeURIComponent(escape(atob(verifyBillParam)));
-        const parsed = JSON.parse(decoded);
-        setScannedBillData(parsed);
-      } catch (e) {
-        try {
-          const decoded = atob(verifyBillParam);
-          const parsed = JSON.parse(decoded);
-          setScannedBillData(parsed);
-        } catch (err) {
-          console.error("Base64 decode failed", err);
-        }
-      }
-    }
-  }, []);
-
   const FOUNDING_ADMINS = ['sisavanhbouddasien@gmail.com', 'tonickbouddasien@gmail.com'];
   const isSuperAdmin = adminData?.role === 'super_admin' || (user?.email && FOUNDING_ADMINS.includes(user.email.toLowerCase()));
   const [isDarkMode, setIsDarkMode] = useState(() => {
     const saved = localStorage.getItem('theme');
-    return saved === 'dark' || (!saved && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    return saved === 'dark' || (!saved && typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches);
   });
 
   useEffect(() => {
-    let settingsUnsubscribe: (() => void) | null = null;
-    let adminUnsubscribe: (() => void) | null = null;
-
     const authUnsubscribe = onAuthStateChanged(auth, (u) => {
-      if (isDemoLocalRef.current) return;
       setUser(u);
-      
-      if (settingsUnsubscribe) {
-        settingsUnsubscribe();
-        settingsUnsubscribe = null;
-      }
-      if (adminUnsubscribe) {
-        adminUnsubscribe();
-        adminUnsubscribe = null;
-      }
-
       if (u) {
-        const configRef = doc(db, 'settings', 'appConfig');
-        const configUnsub = onSnapshot(configRef, (snap) => {
+        onSnapshot(doc(db, 'settings', 'appConfig'), (snap) => {
           if (snap.exists()) setAppConfig(snap.data());
         });
 
-        const adminRef = doc(db, 'admins', u.uid);
-        adminUnsubscribe = onSnapshot(adminRef, (snap) => {
-          if (snap.exists()) {
-            setAdminData(snap.data());
-          } else {
-            setAdminData(null);
-          }
+        onSnapshot(doc(db, 'admins', u.uid), (snap) => {
+          if (snap.exists()) setAdminData(snap.data());
+          else setAdminData(null);
         });
 
-        const settingsRef = doc(db, 'users', u.uid, 'settings', 'main');
-        settingsUnsubscribe = onSnapshot(settingsRef, (snap) => {
-          if (snap.exists()) {
-            setUserSettings(snap.data());
-          } else {
-            setUserSettings({});
-          }
+        onSnapshot(doc(db, 'users', u.uid, 'settings', 'main'), (snap) => {
+          if (snap.exists()) setUserSettings(snap.data());
+          else setUserSettings({});
         }, (error) => {
-          if (auth.currentUser) {
-            handleFirestoreError(error, OperationType.GET, `users/${u.uid}/settings/main`);
-          }
+          if (auth.currentUser) handleFirestoreError(error, OperationType.GET, `users/${u.uid}/settings/main`);
         });
-
-        let approvalUnsub: (() => void) | null = null;
-        if (FOUNDING_ADMINS.includes(u.email?.toLowerCase() || '')) {
-          const q = query(
-            collection(db, 'approval_requests'),
-            where('status', '==', 'pending'),
-            limit(1)
-          );
-          approvalUnsub = onSnapshot(q, (snap) => {
-            if (!snap.empty) {
-              const req = { id: snap.docs[0].id, ...snap.docs[0].data() } as any;
-              setActiveApprovalRequest(req);
-            } else {
-              setActiveApprovalRequest(null);
-            }
-          }, (err) => {
-            console.error("Approval listener error:", err);
-          });
-        }
-
-        return () => {
-          configUnsub();
-          if (adminUnsubscribe) adminUnsubscribe();
-          if (settingsUnsubscribe) settingsUnsubscribe();
-          if (approvalUnsub) approvalUnsub();
-        };
       } else {
         setUserSettings(null);
         setIsFinancialUnlocked(false);
       }
     });
 
-    return () => {
-      authUnsubscribe();
-    };
+    return () => authUnsubscribe();
   }, []);
 
   useEffect(() => {
     localStorage.setItem('theme', isDarkMode ? 'dark' : 'light');
-    if (isDarkMode) {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
+    if (isDarkMode) document.documentElement.classList.add('dark');
+    else document.documentElement.classList.remove('dark');
   }, [isDarkMode]);
-
-  useEffect(() => {
-    const updateActivity = () => setLastActivity(Date.now());
-    const events = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart'];
-    events.forEach(name => document.addEventListener(name, updateActivity));
-
-    const interval = setInterval(() => {
-      const now = Date.now();
-      const idleTime = now - lastActivity;
-      const FIVE_MINUTES = 5 * 60 * 1000;
-
-      if (isFinancialUnlocked && idleTime > FIVE_MINUTES) {
-        setIsFinancialUnlocked(false);
-        if (activeTab === 'financials') {
-          setActiveTab('dashboard');
-        }
-      }
-    }, 10000);
-
-    return () => {
-      events.forEach(name => document.removeEventListener(name, updateActivity));
-      clearInterval(interval);
-    };
-  }, [lastActivity, isFinancialUnlocked, activeTab]);
 
   const login = async () => {
     setLoginError(null);
@@ -262,10 +143,7 @@ export default function App() {
     }
   };
 
-  const logout = () => {
-    setIsDemoLocal(false);
-    signOut(auth);
-  };
+  const logout = () => signOut(auth);
 
   if (!user) {
     return (
@@ -274,7 +152,7 @@ export default function App() {
           <TextLogo centered={true} name={appConfig?.shopName || userSettings?.shopName} />
           <button 
             onClick={login}
-            className="crystal-button w-full h-16 flex items-center justify-center gap-4 text-[11px] shadow-none border border-[#052659]/10 dark:border-white/10"
+            className="crystal-button w-full h-16 flex items-center justify-center gap-4 text-[11px] shadow-none border border-[#052659]/10 dark:border-white/10 cursor-pointer"
           >
             <Globe className="w-5 h-5 opacity-50" />
             <span className="tracking-[0.2em]">{t('sign_in_google')}</span>
@@ -284,11 +162,11 @@ export default function App() {
     );
   }
 
-  // ✅ 🧭 ລາຍການເມນູທັງໝົດໃນລະບົບ (ລວມທັງ Report ແລະ Debts AP/AR):
+  // ✅ Production Menu Items
   const navItems = [
     { id: 'dashboard', icon: LayoutDashboard, label: t('dashboard') },
-    { id: 'report', icon: PieChart, label: i18n.language === 'la' ? 'ບົດລາຍງານການເງິນ' : 'Finance Report' },
-    { id: 'debts', icon: Receipt, label: i18n.language === 'la' ? 'ໜີ້ຕ້ອງສົ່ງ & ຮັບ (AP/AR)' : 'Debt Ledger' },
+    { id: 'reports', icon: FileText, label: i18n.language === 'la' ? 'ບົດລາຍງານການເງິນ' : 'Financial Reports' },
+    { id: 'debts', icon: CreditCard, label: i18n.language === 'la' ? 'ໜີ້ຕ້ອງສົ່ງ & ຮັບ (AP/AR)' : 'Debt Ledger (AP/AR)' },
     { id: 'suppliers', icon: Truck, label: t('suppliers') },
     { id: 'planner', icon: Sparkles, label: i18n.language === 'la' ? 'ແຜນຈັດຊື້ & ບິນ' : 'Auto-Bill Planner' },
     { id: 'financials', icon: Wallet, label: t('financials'), isSensitive: true },
@@ -345,7 +223,7 @@ export default function App() {
       `}>
         <div className={`border-b border-white/5 bg-black/5 flex items-center ${isSidebarCollapsed ? 'justify-center px-2 py-4' : 'justify-between p-6'} gap-2 shrink-0`}>
           {!isSidebarCollapsed ? (
-            <div className="flex-1 overflow-hidden animate-in fade-in duration-200">
+            <div className="flex-1 overflow-hidden">
               <TextLogo dark={true} centered={true} name={appConfig?.shopName || userSettings?.shopName} />
             </div>
           ) : (
@@ -353,10 +231,7 @@ export default function App() {
               <span className="text-[16px] font-alice font-bold text-white leading-none">LD</span>
             </div>
           )}
-          <button 
-            onClick={() => setIsSidebarOpen(false)} 
-            className="lg:hidden p-2 text-white/60 hover:text-white hover:bg-white/10 rounded-xl transition-all"
-          >
+          <button onClick={() => setIsSidebarOpen(false)} className="lg:hidden p-2 text-white/60 hover:text-white rounded-xl cursor-pointer">
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -368,16 +243,14 @@ export default function App() {
               onClick={() => handleTabChange(item)}
               title={isSidebarCollapsed ? item.label : undefined}
               className={`
-                w-full flex items-center ${isSidebarCollapsed ? 'justify-center px-0' : 'justify-start px-4'} py-3 rounded-xl text-[12px] font-bold uppercase tracking-wider transition-all duration-300
+                w-full flex items-center ${isSidebarCollapsed ? 'justify-center px-0' : 'justify-start px-4'} py-3 rounded-xl text-[12px] font-bold uppercase tracking-wider transition-all duration-300 cursor-pointer
                 ${activeTab === item.id 
                   ? 'bg-white/10 text-white shadow-[0_8px_16px_-4px_rgba(0,0,0,0.3)] border border-white/10 backdrop-blur-md' 
                   : 'text-white/40 hover:bg-white/5 hover:text-white'}
               `}
             >
               <item.icon className="w-4 h-4 shrink-0" />
-              {!isSidebarCollapsed && (
-                <span className="truncate ml-3 animate-in fade-in duration-200">{item.label}</span>
-              )}
+              {!isSidebarCollapsed && <span className="truncate ml-3">{item.label}</span>}
             </button>
           ))}
         </nav>
@@ -386,7 +259,7 @@ export default function App() {
           <div className={`flex items-center ${isSidebarCollapsed ? 'justify-center' : 'gap-3'} overflow-hidden`}>
             <img src={user.photoURL || ''} alt="User" className="w-8 h-8 rounded-full border border-white/20 shrink-0" />
             {!isSidebarCollapsed && (
-              <div className="overflow-hidden animate-in fade-in duration-200">
+              <div className="overflow-hidden">
                 <p className="text-xs font-bold truncate">{user.displayName}</p>
                 <p className="text-[10px] opacity-40 truncate uppercase font-bold tracking-tighter">{t('admin_session')}</p>
               </div>
@@ -396,17 +269,16 @@ export default function App() {
           <div className={`flex ${isSidebarCollapsed ? 'flex-col items-center' : 'items-center'} gap-2`}>
             <button
               onClick={toggleSidebarCollapse}
-              className="hidden lg:flex items-center justify-center p-2 text-white/40 hover:text-white hover:bg-white/5 rounded-xl transition-all"
+              className="hidden lg:flex items-center justify-center p-2 text-white/40 hover:text-white hover:bg-white/5 rounded-xl cursor-pointer"
             >
               {isSidebarCollapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
             </button>
-
             <button 
               onClick={logout}
-              className={`flex items-center justify-center gap-2 py-2 text-[11px] font-bold uppercase tracking-widest text-red-300 hover:text-red-400 hover:bg-white/5 rounded-xl transition-all ${isSidebarCollapsed ? 'w-full' : 'flex-1'}`}
+              className={`flex items-center justify-center gap-2 py-2 text-[11px] font-bold uppercase text-red-300 hover:text-red-400 hover:bg-white/5 rounded-xl cursor-pointer ${isSidebarCollapsed ? 'w-full' : 'flex-1'}`}
             >
               <LogOut className="w-3.5 h-3.5 shrink-0" />
-              {!isSidebarCollapsed && <span className="animate-in fade-in duration-200">{t('logout')}</span>}
+              {!isSidebarCollapsed && <span>{t('logout')}</span>}
             </button>
           </div>
         </div>
@@ -429,61 +301,57 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-2">
-             <div className="relative group">
-               <button className="h-9 px-3 bg-white/10 hover:bg-white/15 active:bg-white/20 rounded-xl flex items-center gap-2 transition-all border border-white/5 shadow-inner">
-                 <Store className="w-3.5 h-3.5 text-blue-300" />
-                 <span className="text-[10px] font-black uppercase tracking-wider text-white">
-                   {selectedBranch === 'branch_1' 
-                     ? (i18n.language === 'la' ? 'ສາຂາ 1 (ນະຄອນຫຼວງ)' : 'Branch 1 (Main)') 
-                     : (i18n.language === 'la' ? 'ສາຂາ 2 (ຫຼວງພະບາງ)' : 'Branch 2 (LPB)')
-                   }
-                 </span>
-                 <span className="text-[8px] opacity-40">▼</span>
-               </button>
-               <div className="absolute right-0 mt-1 w-48 bg-white dark:bg-[#073069] border border-slate-100 dark:border-white/10 rounded-2xl shadow-xl py-2 hidden group-hover:block hover:block z-50 text-slate-800 dark:text-white">
-                 <button
-                   onClick={() => { setSelectedBranch('branch_1'); localStorage.setItem('selected_branch', 'branch_1'); }}
-                   className={`w-full text-left px-4 py-2.5 text-xs font-bold flex items-center gap-2 ${selectedBranch === 'branch_1' ? 'bg-blue-500/10 text-blue-600 dark:text-blue-300' : 'text-slate-700 dark:text-slate-300'}`}
-                 >
-                   <MapPin className="w-3.5 h-3.5" />
-                   <span>ສາຂາ 1 (ນະຄອນຫຼວງ)</span>
-                 </button>
-                 <button
-                   onClick={() => { setSelectedBranch('branch_2'); localStorage.setItem('selected_branch', 'branch_2'); }}
-                   className={`w-full text-left px-4 py-2.5 text-xs font-bold flex items-center gap-2 ${selectedBranch === 'branch_2' ? 'bg-blue-500/10 text-blue-600 dark:text-blue-300' : 'text-slate-700 dark:text-slate-300'}`}
-                 >
-                   <MapPin className="w-3.5 h-3.5" />
-                   <span>ສາຂາ 2 (ຫຼວງພະບາງ)</span>
-                 </button>
-               </div>
-             </div>
+            <div className="relative group">
+              <button className="h-9 px-3 bg-white/10 hover:bg-white/15 rounded-xl flex items-center gap-2 border border-white/5 cursor-pointer">
+                <Store className="w-3.5 h-3.5 text-blue-300" />
+                <span className="text-[10px] font-black uppercase text-white">
+                  {selectedBranch === 'branch_1' ? 'ສາຂາ 1 (ນະຄອນຫຼວງ)' : 'ສາຂາ 2 (ຫຼວງພະບາງ)'}
+                </span>
+                <span className="text-[8px] opacity-40">▼</span>
+              </button>
+              <div className="absolute right-0 mt-1 w-48 bg-white dark:bg-[#073069] border border-slate-100 dark:border-white/10 rounded-2xl shadow-xl py-2 hidden group-hover:block hover:block z-50 text-slate-800 dark:text-white">
+                <button
+                  onClick={() => { setSelectedBranch('branch_1'); localStorage.setItem('selected_branch', 'branch_1'); }}
+                  className={`w-full text-left px-4 py-2.5 text-xs font-bold flex items-center gap-2 cursor-pointer ${selectedBranch === 'branch_1' ? 'bg-blue-500/10 text-blue-600 dark:text-blue-300' : 'text-slate-700 dark:text-slate-300 hover:bg-slate-50'}`}
+                >
+                  <MapPin className="w-3.5 h-3.5" />
+                  <span>ສາຂາ 1 (ນະຄອນຫຼວງ)</span>
+                </button>
+                <button
+                  onClick={() => { setSelectedBranch('branch_2'); localStorage.setItem('selected_branch', 'branch_2'); }}
+                  className={`w-full text-left px-4 py-2.5 text-xs font-bold flex items-center gap-2 cursor-pointer ${selectedBranch === 'branch_2' ? 'bg-blue-500/10 text-blue-600 dark:text-blue-300' : 'text-slate-700 dark:text-slate-300 hover:bg-slate-50'}`}
+                >
+                  <MapPin className="w-3.5 h-3.5" />
+                  <span>ສາຂາ 2 (ຫຼວງພະບາງ)</span>
+                </button>
+              </div>
+            </div>
 
-             <button 
+            <button 
               onClick={() => i18n.changeLanguage(i18n.language === 'la' ? 'en' : 'la')}
-              className="p-2 hover:bg-white/10 rounded-md text-white flex items-center gap-2 text-[10px] font-black uppercase tracking-widest"
+              className="p-2 hover:bg-white/10 rounded-md text-white flex items-center gap-2 text-[10px] font-black uppercase cursor-pointer"
             >
               <Globe className="w-4 h-4 text-white/60" />
-              <span className="hidden sm:inline">{i18n.language === 'la' ? 'LA' : 'EN'}</span>
+              <span>{i18n.language === 'la' ? 'LA' : 'EN'}</span>
             </button>
             <button 
               onClick={() => setIsDarkMode(!isDarkMode)}
-              className="p-2 hover:bg-white/10 rounded-md text-white flex items-center gap-2"
+              className="p-2 hover:bg-white/10 rounded-md text-white flex items-center gap-2 cursor-pointer"
             >
               {isDarkMode ? <Sun className="w-4 h-4 text-yellow-400" /> : <Moon className="w-4 h-4 text-blue-300" />}
             </button>
           </div>
         </header>
 
-        {/* Dynamic Section Container */}
         <div className="flex-1 p-4 lg:p-6 overflow-y-auto bg-gradient-to-br from-[#f8fafc] to-[#f1f5f9] dark:from-[#052659] dark:to-[#073069]">
-           <div className="max-w-7xl mx-auto space-y-6">
-             {activeTab === 'dashboard' && <Dashboard userSettings={userSettings} user={user} selectedBranch={selectedBranch} />}
-             {activeTab === 'report' && <FinanceReport selectedBranch={selectedBranch} />}
-             {activeTab === 'debts' && <DebtLedger selectedBranch={selectedBranch} />}
-             {activeTab === 'suppliers' && <Suppliers />}
-             {activeTab === 'planner' && <ProcurementPlanner selectedBranch={selectedBranch} />}
-             {activeTab === 'financials' && <Financials appConfig={appConfig} selectedBranch={selectedBranch} />}
-             {activeTab === 'settings' && <Settings user={user} isDarkMode={isDarkMode} setIsDarkMode={setIsDarkMode} userSettings={userSettings} isSuperAdmin={isSuperAdmin} appConfig={appConfig} selectedBranch={selectedBranch} />}
+          <div className="max-w-7xl mx-auto space-y-6">
+            {activeTab === 'dashboard' && <Dashboard userSettings={userSettings} user={user} selectedBranch={selectedBranch} />}
+            {activeTab === 'reports' && <FinanceReport selectedBranch={selectedBranch} />}
+            {activeTab === 'debts' && <DebtLedger selectedBranch={selectedBranch} />}
+            {activeTab === 'suppliers' && <Suppliers />}
+            {activeTab === 'planner' && <ProcurementPlanner selectedBranch={selectedBranch} />}
+            {activeTab === 'financials' && <Financials appConfig={appConfig} selectedBranch={selectedBranch} />}
+            {activeTab === 'settings' && <Settings user={user} isDarkMode={isDarkMode} setIsDarkMode={setIsDarkMode} userSettings={userSettings} isSuperAdmin={isSuperAdmin} appConfig={appConfig} selectedBranch={selectedBranch} />}
           </div>
         </div>
 
