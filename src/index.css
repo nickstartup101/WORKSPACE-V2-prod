@@ -15,6 +15,7 @@ body {
   color: #0f172a;
 }
 
+/* Glassmorphism & Card Utilities */
 .glass-card {
   background: rgba(255, 255, 255, 0.95);
   backdrop-filter: blur(12px);
