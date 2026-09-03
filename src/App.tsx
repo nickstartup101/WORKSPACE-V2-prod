@@ -10,29 +10,21 @@ import {
   Moon,
   Sun,
   Globe,
-  AlertCircle,
-  ShieldAlert,
-  Check,
-  Eye,
-  EyeOff,
-  Sparkles,
   Store,
   MapPin,
   ChevronLeft,
   ChevronRight,
-  CheckCircle,
-  PieChart,
-  Receipt,
+  Sparkles,
   FileText,
   CreditCard
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { auth, db, handleFirestoreError, OperationType } from './firebase';
-import { signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged, User, signInWithEmailAndPassword, createUserWithEmailAndPassword, signInAnonymously } from 'firebase/auth';
-import { doc, onSnapshot, setDoc, serverTimestamp, collection, query, where, limit, deleteDoc } from 'firebase/firestore';
+import { signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged, User } from 'firebase/auth';
+import { doc, onSnapshot, setDoc, serverTimestamp } from 'firebase/firestore';
 import './i18n';
 
-// Production Components
+// Components
 import Dashboard from './components/Dashboard';
 import Suppliers from './components/Suppliers';
 import Financials from './components/Financials';
@@ -42,23 +34,17 @@ import ProcurementPlanner from './components/ProcurementPlanner';
 import FinanceReport from './components/FinanceReport';
 import DebtLedger from './components/DebtLedger';
 
-// Premium Text Logo Component
 const TextLogo = ({ centered = false, dark = false, name = "La Dolce" }: { centered?: boolean, dark?: boolean, name?: string | null }) => (
   <div className={`flex flex-col ${centered ? 'items-center text-center' : 'items-start text-left'} gap-2 group`}>
     <h1 className={`text-5xl font-alice tracking-tight leading-none ${dark ? 'text-white' : 'text-[#052659] dark:text-white'}`}>
       {name || "La Dolce"}
     </h1>
-    
     <div className="flex items-center justify-center gap-3 w-full">
       <div className={`h-[1px] flex-1 min-w-[12px] opacity-20 ${dark ? 'bg-white' : 'bg-[#052659]'}`}></div>
       <span className={`text-[9px] font-sans font-black uppercase tracking-[0.5em] ${dark ? 'text-white/60' : 'text-[#052659]/60 dark:text-white/40'}`}>
         Workspace
       </span>
       <div className={`h-[1px] flex-1 min-w-[12px] opacity-20 ${dark ? 'bg-white' : 'bg-[#052659]'}`}></div>
-    </div>
-    
-    <div className={`text-[8px] font-sans font-bold uppercase tracking-[0.8em] opacity-30 mt-1 ${dark ? 'text-white' : 'text-[#052659] dark:text-white'}`}>
-       estd 2026
     </div>
   </div>
 );
@@ -84,8 +70,6 @@ export default function App() {
   const [userSettings, setUserSettings] = useState<any>(null);
   const [adminData, setAdminData] = useState<any>(null);
   const [appConfig, setAppConfig] = useState<any>(null);
-  const [lastActivity, setLastActivity] = useState(Date.now());
-  const [loginError, setLoginError] = useState<string | null>(null);
 
   const [selectedBranch, setSelectedBranch] = useState<'branch_1' | 'branch_2'>(() => {
     return (localStorage.getItem('selected_branch') as any) || 'branch_1';
@@ -133,13 +117,10 @@ export default function App() {
   }, [isDarkMode]);
 
   const login = async () => {
-    setLoginError(null);
     try {
       await signInWithPopup(auth, new GoogleAuthProvider());
     } catch (err: any) {
-      if (err.code === 'auth/unauthorized-domain') setLoginError('unauthorized-domain');
-      else if (err.code === 'auth/popup-blocked') setLoginError('popup-blocked');
-      else setLoginError(err.message || 'unknown');
+      console.error(err);
     }
   };
 
@@ -162,7 +143,6 @@ export default function App() {
     );
   }
 
-  // ✅ Production Menu Items
   const navItems = [
     { id: 'dashboard', icon: LayoutDashboard, label: t('dashboard') },
     { id: 'reports', icon: FileText, label: i18n.language === 'la' ? 'ບົດລາຍງານການເງິນ' : 'Financial Reports' },
@@ -210,7 +190,7 @@ export default function App() {
     <div className="min-h-screen flex transition-colors duration-300">
       {isSidebarOpen && (
         <div 
-          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-45 lg:hidden animate-in fade-in duration-200"
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-45 lg:hidden"
           onClick={() => setIsSidebarOpen(false)}
         />
       )}
@@ -231,7 +211,7 @@ export default function App() {
               <span className="text-[16px] font-alice font-bold text-white leading-none">LD</span>
             </div>
           )}
-          <button onClick={() => setIsSidebarOpen(false)} className="lg:hidden p-2 text-white/60 hover:text-white rounded-xl cursor-pointer">
+          <button onClick={() => setIsSidebarOpen(false)} className="lg:hidden p-2 text-white/60 hover:text-white rounded-xl">
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -241,11 +221,10 @@ export default function App() {
             <button
               key={item.id}
               onClick={() => handleTabChange(item)}
-              title={isSidebarCollapsed ? item.label : undefined}
               className={`
                 w-full flex items-center ${isSidebarCollapsed ? 'justify-center px-0' : 'justify-start px-4'} py-3 rounded-xl text-[12px] font-bold uppercase tracking-wider transition-all duration-300 cursor-pointer
                 ${activeTab === item.id 
-                  ? 'bg-white/10 text-white shadow-[0_8px_16px_-4px_rgba(0,0,0,0.3)] border border-white/10 backdrop-blur-md' 
+                  ? 'bg-white/10 text-white shadow-md border border-white/10 backdrop-blur-md' 
                   : 'text-white/40 hover:bg-white/5 hover:text-white'}
               `}
             >
