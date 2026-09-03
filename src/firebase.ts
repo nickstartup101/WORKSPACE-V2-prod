@@ -13,7 +13,6 @@ const firebaseConfig = {
   appId: "1:749405934698:web:016a6985764177a40fa613",
   measurementId: "G-4G821Q7TQ4"
 };
-};
 
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
