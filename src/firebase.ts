@@ -5,7 +5,6 @@ import { getStorage } from 'firebase/storage';
 
 // ✅ Firebase Configuration ຫຼັກຂອງ La Dolce Workspace
 const firebaseConfig = {
-  // For Firebase JS SDK v7.20.0 and later, measurementId is optional
   apiKey: "AIzaSyDttcZJfXZ4uI7mQiR-wv0pvKIGlreLh_0",
   authDomain: "la-dolce-workspace-f975d.firebaseapp.com",
   projectId: "la-dolce-workspace-f975d",
