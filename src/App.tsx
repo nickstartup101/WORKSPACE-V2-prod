@@ -24,7 +24,7 @@ import { signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged, User 
 import { doc, onSnapshot, setDoc, serverTimestamp } from 'firebase/firestore';
 import './i18n';
 
-// Components
+// Production Components
 import Dashboard from './components/Dashboard';
 import Suppliers from './components/Suppliers';
 import Financials from './components/Financials';
@@ -211,7 +211,7 @@ export default function App() {
               <span className="text-[16px] font-alice font-bold text-white leading-none">LD</span>
             </div>
           )}
-          <button onClick={() => setIsSidebarOpen(false)} className="lg:hidden p-2 text-white/60 hover:text-white rounded-xl">
+          <button onClick={() => setIsSidebarOpen(false)} className="lg:hidden p-2 text-white/60 hover:text-white rounded-xl cursor-pointer">
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -221,6 +221,7 @@ export default function App() {
             <button
               key={item.id}
               onClick={() => handleTabChange(item)}
+              title={isSidebarCollapsed ? item.label : undefined}
               className={`
                 w-full flex items-center ${isSidebarCollapsed ? 'justify-center px-0' : 'justify-start px-4'} py-3 rounded-xl text-[12px] font-bold uppercase tracking-wider transition-all duration-300 cursor-pointer
                 ${activeTab === item.id 
