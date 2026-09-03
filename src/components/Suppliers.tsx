@@ -124,7 +124,7 @@ export default function Suppliers() {
     return `#${format(new Date(), 'ddMMyyyy')}${SUPPLIER_CODES[supplier] || 'OT'}`;
   }, [billDate, supplier]);
 
-  // Image Processing
+  // Image Processing & Compression
   const processImageFile = (file: File) => {
     if (!file || !file.type.startsWith('image/')) {
       alert(i18n.language === 'la' ? 'ກະລຸນາເລືອກໄຟລ໌ຮູບພາບ (JPG, PNG)' : 'Please select an image file.');
@@ -303,7 +303,7 @@ export default function Suppliers() {
         isDropdownOpen: false
       }]);
     } catch (err: any) {
-      alert(`Error: ${err.message}`);
+      alert(`Error saving to Firestore: ${err.message}`);
     } finally {
       setSaveLoading(false);
     }
@@ -542,8 +542,10 @@ export default function Suppliers() {
                         <input 
                           type="text"
                           required
-                          className="w-full h-10 px-3 pr-8 rounded-xl bg-white dark:bg-[#073069] border text-xs font-bold outline-none cursor-pointer"
-                          placeholder="Search product from database..."
+                          className={`w-full h-10 px-3 pr-8 rounded-xl bg-white dark:bg-[#073069] border text-xs font-bold outline-none cursor-pointer ${
+                            !item.productId && item.productSearch ? 'border-amber-400' : 'border-slate-200 dark:border-white/10 text-slate-800 dark:text-white'
+                          }`}
+                          placeholder={t('search_params') + "..."}
                           value={item.isDropdownOpen ? item.productSearch : (selectedProd?.name || item.productSearch)}
                           onFocus={() => updateItemRow(index, { isDropdownOpen: true })}
                           onClick={() => updateItemRow(index, { isDropdownOpen: true })}
