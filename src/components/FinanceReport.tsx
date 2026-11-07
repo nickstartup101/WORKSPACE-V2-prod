@@ -3,48 +3,65 @@ import { db, handleFirestoreError, OperationType } from '../firebase';
 import { collection, onSnapshot } from 'firebase/firestore';
 import { 
   ArrowUpRight, ArrowDownRight, Percent, 
-  Calendar, Download, Clock, Sparkles
+  Calendar, Download, Clock, Sparkles, Filter
 } from 'lucide-react';
-import { format, subMonths } from 'date-fns';
+import { format } from 'date-fns';
 import { utils, writeFile } from 'xlsx';
 import { useTranslation } from 'react-i18next';
 
-// 🌟 ຟັງຊັນດຶງ "ປີ-ເດືອນ (YYYY-MM)" ອັດສະລິຍະ (ຮອງຮັບທຸກຮູບແບບ: 2026-10, 11/10/2026, Timestamp)
-const extractYearMonth = (raw: any): string => {
+// 🌟 ຟັງຊັນແປງວັນທີອັດສະລິຍະ: ຮອງຮັບທັງ ປີ 2569 (ພ.ສ.) ➔ 2026 (ຄ.ສ.), DD/MM/YYYY, Timestamp
+const extractYearMonthSafe = (raw: any): string => {
   if (!raw) return '';
+
+  let d: Date | null = null;
+
   // 1. ຖ້າເປັນ Firestore Timestamp
   if (raw && typeof raw.toDate === 'function') {
-    try { return format(raw.toDate(), 'yyyy-MM'); } catch {}
+    try { d = raw.toDate(); } catch {}
+  } else if (raw && typeof raw.seconds === 'number') {
+    d = new Date(raw.seconds * 1000);
+  } else if (raw instanceof Date && !isNaN(raw.getTime())) {
+    d = raw;
   }
-  // 2. ຖ້າເປັນ Date Object
-  if (raw instanceof Date && !isNaN(raw.getTime())) {
-    try { return format(raw, 'yyyy-MM'); } catch {}
+
+  if (d && !isNaN(d.getTime())) {
+    let y = d.getFullYear();
+    if (y > 2400) y -= 543; // ແປງ 2569 ➔ 2026
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    return `${y}-${m}`;
   }
-  // 3. ຖ້າເປັນ String
+
+  // 2. ຖ້າເປັນ String
   if (typeof raw === 'string') {
-    const clean = raw.trim().split('T')[0];
+    const clean = raw.trim().split('T')[0].split(' ')[0];
+
     // ຮູບແບບ YYYY-MM-DD
     if (clean.includes('-')) {
       const parts = clean.split('-');
-      if (parts.length >= 2 && parts[0].length === 4) {
-        return `${parts[0]}-${parts[1].padStart(2, '0')}`;
+      if (parts.length >= 2) {
+        let y = parseInt(parts[0]);
+        if (y > 2400) y -= 543; // ແປງ 2569 ➔ 2026
+        const m = parts[1].padStart(2, '0');
+        if (!isNaN(y)) return `${y}-${m}`;
       }
     }
-    // ຮູບແບບ DD/MM/YYYY ຫຼື DD/MM/YY
+
+    // ຮູບແບບ DD/MM/YYYY ຫຼື MM/DD/YYYY
     if (clean.includes('/')) {
       const parts = clean.split('/');
       if (parts.length === 3) {
-        // ຖ້າປີຢູ່ທ້າຍ ເຊັ່ນ 11/10/2026
-        if (parts[2].length === 4) {
-          return `${parts[2]}-${parts[1].padStart(2, '0')}`;
-        }
-        // ຖ້າປີຢູ່ໜ້າ ເຊັ່ນ 2026/10/11
-        if (parts[0].length === 4) {
-          return `${parts[0]}-${parts[1].padStart(2, '0')}`;
-        }
+        let y = parseInt(parts[2]);
+        if (y > 2400) y -= 543;
+
+        const p0 = parseInt(parts[0]);
+        const p1 = parseInt(parts[1]);
+        // ຖ້າຕົວທຳອິດ > 12 ສະແດງວ່າແມ່ນວັນທີ (DD/MM/YYYY), ຕົວທີສອງແມ່ນເດືອນ
+        const m = (p0 > 12 ? p1 : (p1 > 12 ? p0 : p1)).toString().padStart(2, '0');
+        if (!isNaN(y)) return `${y}-${m}`;
       }
     }
   }
+
   return '';
 };
 
@@ -55,11 +72,11 @@ export default function FinanceReport({ selectedBranch }: { selectedBranch?: str
   const [transactions, setTransactions] = useState<any[]>([]);
   const [supplierPrices, setSupplierPrices] = useState<any[]>([]);
 
-  // 🌟 ເລືອກເດືອນ (Default: ເດືອນ 10 ທີ່ມີຂໍ້ມູນ ຫຼື ເດືອນປັດຈຸບັນ)
-  const [selectedMonth, setSelectedMonth] = useState<string>('2026-10');
+  // ໂໝດເລືອກ: 'month' ຫຼື 'all'
   const [filterMode, setFilterMode] = useState<'month' | 'all'>('month');
+  const [selectedMonth, setSelectedMonth] = useState<string>('2026-10');
 
-  // 1. ດຶງຂໍ້ມູນ Real-time ຈາກ Firestore (ພ້ອມ Fallback ສາຂາ)
+  // 1. ດຶງຂໍ້ມູນ Real-time ຈາກ Firestore
   useEffect(() => {
     const unsubT = onSnapshot(collection(db, 'transactions'), snap => {
       const all = snap.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -76,7 +93,31 @@ export default function FinanceReport({ selectedBranch }: { selectedBranch?: str
     };
   }, [currentBranch]);
 
-  // 2. 🌟 ຄິດໄລ່ຕົວເລກການເງິນ (ກັ່ນຕອງວັນທີແບບ Universal Matcher)
+  // 🌟 2. ກວດສອບອັດຕະໂນມັດວ່າ "ມີເດືອນໃດແດ່ທີ່ມີບິນແທ້ໆໃນຖານຂໍ້ມູນ"
+  const availableMonthsList = useMemo(() => {
+    const monthCounts: Record<string, number> = {};
+    
+    transactions.forEach(tx => {
+      const ym = extractYearMonthSafe(tx.date) || extractYearMonthSafe(tx.createdAt);
+      if (ym) {
+        monthCounts[ym] = (monthCounts[ym] || 0) + 1;
+      }
+    });
+
+    return Object.entries(monthCounts).sort((a, b) => b[0].localeCompare(a[0]));
+  }, [transactions]);
+
+  // ຖ້າເດືອນທີ່ເລືອກຢູ່ບໍ່ມີຂໍ້ມູນ ໃຫ້ເລືອກເດືອນຫຼ້າສຸດທີ່ມີຂໍ້ມູນອັດຕະໂນມັດ
+  useEffect(() => {
+    if (availableMonthsList.length > 0 && filterMode === 'month') {
+      const exists = availableMonthsList.some(([m]) => m === selectedMonth);
+      if (!exists) {
+        setSelectedMonth(availableMonthsList[0][0]); // ເອົາເດືອນຫຼ້າສຸດທີ່ມີບິນ
+      }
+    }
+  }, [availableMonthsList]);
+
+  // 3. ຄິດໄລ່ຕົວເລກການເງິນ
   const reportData = useMemo(() => {
     let totalRevenue = 0;
     let totalCogs = 0;
@@ -92,9 +133,8 @@ export default function FinanceReport({ selectedBranch }: { selectedBranch?: str
 
     let filteredTxCount = 0;
 
-    // ດຶງຍອດ COGS ຈາກ SupplierPrices
     supplierPrices.forEach(sp => {
-      const spMonth = extractYearMonth(sp.date) || extractYearMonth(sp.createdAt);
+      const spMonth = extractYearMonthSafe(sp.date) || extractYearMonthSafe(sp.createdAt);
       const isMatch = filterMode === 'all' || spMonth === selectedMonth;
 
       if (isMatch) {
@@ -105,9 +145,8 @@ export default function FinanceReport({ selectedBranch }: { selectedBranch?: str
       }
     });
 
-    // ດຶງຍອດ Transactions
     transactions.forEach(tx => {
-      const txMonth = extractYearMonth(tx.date) || extractYearMonth(tx.createdAt);
+      const txMonth = extractYearMonthSafe(tx.date) || extractYearMonthSafe(tx.createdAt);
       const isMatch = filterMode === 'all' || txMonth === selectedMonth;
 
       if (isMatch) {
@@ -121,7 +160,7 @@ export default function FinanceReport({ selectedBranch }: { selectedBranch?: str
         const isReserve = type === 'reserve_transfer' || cat === 'stock_reserve' || String(tx.remark || '').includes('stock');
 
         if (isDividend || isReserve) {
-          totalDividends += amt; // ແຍກເງິນປັນຜົນຕ່າງຫາກ ບໍ່ເອົາໄປຕິດລົບ OPEX
+          totalDividends += amt;
         } else if (type === 'income' || cat === 'sales') {
           totalRevenue += amt;
           if (method.includes('onepay')) onepayRevenue += amt;
@@ -206,9 +245,8 @@ export default function FinanceReport({ selectedBranch }: { selectedBranch?: str
           </div>
         </div>
 
-        {/* 🌟 ຕົວເລືອກເດືອນ & ປຸ່ມສະຫຼັບ (ຕົງຕາມຮູບຂອງທ່ານ) */}
+        {/* ຕົວເລືອກເດືອນ */}
         <div className="flex flex-wrap items-center gap-2">
-          {/* ຊ່ອງເລືອກເດືອນ */}
           <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-white/5 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-white/10 text-xs font-bold">
             <Calendar className="w-4 h-4 text-indigo-500" />
             <input
@@ -222,26 +260,7 @@ export default function FinanceReport({ selectedBranch }: { selectedBranch?: str
             />
           </div>
 
-          {/* ປຸ່ມ ເດືອນນີ້ / ທັງໝົດ */}
           <div className="flex bg-slate-100 dark:bg-black/20 p-1 rounded-xl text-xs font-bold">
-            <button
-              onClick={() => {
-                setSelectedMonth('2026-10'); // ຕັ້ງເດືອນ 10 ທີ່ມີຂໍ້ມູນ
-                setFilterMode('month');
-              }}
-              className={`px-3 py-1 rounded-lg cursor-pointer transition-all ${filterMode === 'month' && selectedMonth === '2026-10' ? 'bg-[#052659] text-white shadow-xs' : 'text-slate-500'}`}
-            >
-              ເດືອນ 10
-            </button>
-            <button
-              onClick={() => {
-                setSelectedMonth(format(new Date(), 'yyyy-MM')); // ເດືອນປັດຈຸບັນ
-                setFilterMode('month');
-              }}
-              className={`px-3 py-1 rounded-lg cursor-pointer transition-all ${filterMode === 'month' && selectedMonth === format(new Date(), 'yyyy-MM') ? 'bg-[#052659] text-white shadow-xs' : 'text-slate-500'}`}
-            >
-              ເດືອນນີ້
-            </button>
             <button
               onClick={() => setFilterMode('all')}
               className={`px-3 py-1 rounded-lg cursor-pointer transition-all ${filterMode === 'all' ? 'bg-[#052659] text-white shadow-xs' : 'text-slate-500'}`}
@@ -260,9 +279,34 @@ export default function FinanceReport({ selectedBranch }: { selectedBranch?: str
         </div>
       </div>
 
-      {/* Row 1: 5 KPI Cards ຫຼັກ */}
+      {/* 🌟 ແຖບປຸ່ມເດືອນທີ່ມີຂໍ້ມູນຕົວຈິງ (ກົດປຸບ ຕົວເລກຂຶ້ນມາທັນທີ!) */}
+      {availableMonthsList.length > 0 && (
+        <div className="p-3 bg-white dark:bg-[#073069] rounded-2xl border border-slate-200/80 dark:border-white/10 flex items-center gap-2 overflow-x-auto">
+          <span className="text-[10px] font-black uppercase text-slate-400 flex items-center gap-1 shrink-0">
+            <Filter className="w-3 h-3 text-indigo-500" />
+            ເລືອກເດືອນທີ່ມີບິນ:
+          </span>
+          {availableMonthsList.map(([mStr, count]) => (
+            <button
+              key={mStr}
+              onClick={() => {
+                setSelectedMonth(mStr);
+                setFilterMode('month');
+              }}
+              className={`px-3 py-1 rounded-xl text-xs font-bold shrink-0 cursor-pointer transition-all ${
+                filterMode === 'month' && selectedMonth === mStr
+                  ? 'bg-indigo-600 text-white shadow-md'
+                  : 'bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-slate-300 hover:bg-slate-200'
+              }`}
+            >
+              ເດືອນ {mStr} <span className="text-[10px] opacity-75">({count} ບິນ)</span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Row 1: 5 KPI Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-        {/* Total Revenue */}
         <div className="bg-white dark:bg-[#073069] p-5 rounded-3xl border border-slate-200/80 dark:border-white/10 shadow-sm space-y-1">
           <span className="text-[10px] font-black uppercase text-slate-400 flex items-center gap-1">
             <ArrowUpRight className="w-3.5 h-3.5 text-emerald-500" /> TOTAL REVENUE
@@ -273,7 +317,6 @@ export default function FinanceReport({ selectedBranch }: { selectedBranch?: str
           <p className="text-[9.5px] text-slate-400 uppercase font-bold">CUSTOMER INFLOWS</p>
         </div>
 
-        {/* COGS */}
         <div className="bg-white dark:bg-[#073069] p-5 rounded-3xl border border-slate-200/80 dark:border-white/10 shadow-sm space-y-1">
           <span className="text-[10px] font-black uppercase text-slate-400 flex items-center gap-1">
             <ArrowDownRight className="w-3.5 h-3.5 text-rose-500" /> COGS (PURCHASING)
@@ -284,7 +327,6 @@ export default function FinanceReport({ selectedBranch }: { selectedBranch?: str
           <p className="text-[9.5px] text-slate-400 uppercase font-bold">MATERIAL COSTS</p>
         </div>
 
-        {/* Gross Margin */}
         <div className="bg-white dark:bg-[#073069] p-5 rounded-3xl border border-slate-200/80 dark:border-white/10 shadow-sm space-y-1">
           <span className="text-[10px] font-black uppercase text-slate-400 flex items-center gap-1">
             <Percent className="w-3.5 h-3.5 text-blue-500" /> % GROSS MARGIN
@@ -295,68 +337,9 @@ export default function FinanceReport({ selectedBranch }: { selectedBranch?: str
           <p className="text-[9.5px] text-slate-400 font-mono">GP: {Math.round(reportData.grossProfit).toLocaleString()} ₭</p>
         </div>
 
-        {/* NET PROFIT */}
         <div className={`p-5 rounded-3xl border shadow-sm space-y-1 ${
           reportData.netProfit >= 0 
             ? 'bg-emerald-50/50 dark:bg-emerald-950/20 border-emerald-500/20' 
             : 'bg-rose-50/50 dark:bg-rose-950/20 border-rose-500/20'
         }`}>
-          <span className={`text-[10px] font-black uppercase ${reportData.netProfit >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
-            NET PROFIT
-          </span>
-          <p className={`text-xl sm:text-2xl font-black font-mono ${reportData.netProfit >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
-            {Math.round(reportData.netProfit).toLocaleString()} ₭
-          </p>
-          <p className="text-[9.5px] text-slate-400 font-bold uppercase">
-            OPEX: {Math.round(reportData.totalOpex).toLocaleString()} ₭
-          </p>
-        </div>
-
-        {/* ESTIMATED ROI */}
-        <div className="bg-amber-50/50 dark:bg-white/5 p-5 rounded-3xl border border-amber-500/20 shadow-sm space-y-1 col-span-2 lg:col-span-1">
-          <span className="text-[10px] font-black uppercase text-amber-600 dark:text-amber-400">
-            ESTIMATED ROI
-          </span>
-          <p className="text-xl sm:text-2xl font-black font-mono text-amber-600 dark:text-amber-400">
-            {reportData.roi.toFixed(1)}%
-          </p>
-          <p className="text-[9.5px] text-slate-400 uppercase font-bold">RETURN ON TOTAL COST</p>
-        </div>
-      </div>
-
-      {/* Row 2: ຍອດເງິນຕາມຊ່ອງທາງ */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="bg-white dark:bg-[#073069] p-5 rounded-3xl border border-slate-200/80 dark:border-white/10 shadow-sm space-y-1">
-          <div className="flex justify-between items-center">
-            <span className="text-[10px] font-black uppercase text-slate-400">ເງິນສົດ (CASH)</span>
-            <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 text-[9px] font-black uppercase">Cash</span>
-          </div>
-          <p className="text-2xl font-black font-mono text-slate-800 dark:text-white">
-            {Math.round(reportData.netCash).toLocaleString()} ₭
-          </p>
-        </div>
-
-        <div className="bg-white dark:bg-[#073069] p-5 rounded-3xl border border-slate-200/80 dark:border-white/10 shadow-sm space-y-1">
-          <div className="flex justify-between items-center">
-            <span className="text-[10px] font-black uppercase text-slate-400">BCEL ONEPAY</span>
-            <span className="px-2 py-0.5 rounded-full bg-rose-500/10 text-rose-600 text-[9px] font-black uppercase">OnePay</span>
-          </div>
-          <p className="text-2xl font-black font-mono text-slate-800 dark:text-white">
-            {Math.round(reportData.netOnepay).toLocaleString()} ₭
-          </p>
-        </div>
-
-        <div className="bg-white dark:bg-[#073069] p-5 rounded-3xl border border-slate-200/80 dark:border-white/10 shadow-sm space-y-1">
-          <div className="flex justify-between items-center">
-            <span className="text-[10px] font-black uppercase text-slate-400">ທະນາຄານ LDB</span>
-            <span className="px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-600 text-[9px] font-black uppercase">LDB</span>
-          </div>
-          <p className="text-2xl font-black font-mono text-slate-800 dark:text-white">
-            {Math.round(reportData.netLdb).toLocaleString()} ₭
-          </p>
-        </div>
-      </div>
-
-    </div>
-  );
-}
+          <span className={`
