@@ -3,12 +3,12 @@ import { auth, db } from '../firebase';
 import { 
   collection, addDoc, onSnapshot, 
   deleteDoc, doc, setDoc, serverTimestamp,
-  query, where, limit 
+  query, where, orderBy, limit 
 } from 'firebase/firestore';
 import { 
   Plus, Trash2, Search, Download, 
   List, Receipt, Image as ImageIcon, Upload, Eye, X, Truck,
-  Sparkles, Bot, Check, Key, Calendar, ChevronLeft, ChevronRight, Zap
+  Sparkles, Bot, Check, Key, Calendar, ChevronLeft, ChevronRight, Filter
 } from 'lucide-react';
 import { format, subMonths, addMonths } from 'date-fns';
 import { utils, writeFile } from 'xlsx';
@@ -61,10 +61,6 @@ const toStandardDateString = (raw: any): string => {
       const parts = clean.split('-');
       if (parts.length === 3) return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
     }
-    if (clean.includes('/')) {
-      const parts = clean.split('/');
-      if (parts.length === 3 && parts[2].length === 4) return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
-    }
     return clean;
   }
   if (raw && typeof raw.toDate === 'function') {
@@ -82,15 +78,12 @@ export default function Suppliers() {
   const [entryMode, setEntryMode] = useState<'batch' | 'single'>('batch');
   const [isDragging, setIsDragging] = useState(false);
 
-  // 🌟 ຕັ້ງຄ່າເລີ່ມຕົ້ນເປັນ 'latest' (ດຶງບິນຫຼ້າສຸດທັນທີ ບໍ່ລໍຖ້າເດືອນ 11)
-  const [ledgerViewMode, setLedgerViewMode] = useState<'latest' | 'month'>('latest');
+  // 🌟 State ສຳລັບເລືອກເດືອນທີ່ຈະດຶງບິນມາສະແດງໃນຕາຕະລາງ
   const [ledgerDate, setLedgerDate] = useState<Date>(new Date());
+  const [ledgerFilterMode, setLedgerFilterMode] = useState<'month' | 'latest'>('month');
   const selectedLedgerMonth = useMemo(() => format(ledgerDate, 'yyyy-MM'), [ledgerDate]);
 
-  // Pagination
-  const [currentPage, setCurrentPage] = useState<number>(1);
-  const pageSize = 25;
-
+  // Modals
   const [showProductManager, setShowProductManager] = useState(false);
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
 
@@ -150,38 +143,38 @@ export default function Suppliers() {
     return `#${format(new Date(), 'ddMMyyyy')}${SUPPLIER_CODES[supplier] || 'OT'}`;
   }, [billDate, supplier]);
 
-  // 🌟 1. Query ປອດໄພ 100%: ບໍ່ຕິດ Index Error ແລະ ບໍ່ເກີນ 128 MB!
+  // 🌟 ດຶງຂໍ້ມູນ Real-time ສະເພາະເດືອນທີ່ເລືອກ (ຫຼື 100 ບິນຫຼ້າສຸດ) ➔ ບໍ່ມີທາງເກີນ 128 MB 100%!
   useEffect(() => {
     const unsubP = onSnapshot(collection(db, 'products'), (snap) => {
       setProducts(snap.docs.map(d => ({ id: d.id, ...d.data() })));
     });
 
     let qSupplierPrices;
-    if (ledgerViewMode === 'month') {
+    if (ledgerFilterMode === 'month') {
       const monthStart = `${selectedLedgerMonth}-01`;
       const monthEnd = `${selectedLedgerMonth}-31`;
-      // ດຶງສະເພາະເດືອນທີ່ເລືອກ ໂດຍບໍ່ສັ່ງ orderBy ໃນ Server (ໃຫ້ JS ເປັນໂຕ sort ເອງເພື່ອບໍ່ໃຫ້ຕິດ Index Error)
+      
+      // ດຶງສະເພາະເດືອນທີ່ເລືອກ
       qSupplierPrices = query(
         collection(db, 'supplierPrices'),
         where('date', '>=', monthStart),
         where('date', '<=', monthEnd),
-        limit(100)
+        orderBy('date', 'desc')
       );
     } else {
-      // ໂໝດເລີ່ມຕົ້ນ: ດຶງ 80 ບິນມາສະແດງທັນທີ (ປ້ອງກັນ 128MB)
+      // ໂໝດດຶງ 100 ບິນຫຼ້າສຸດ
       qSupplierPrices = query(
         collection(db, 'supplierPrices'),
-        limit(80)
+        orderBy('createdAt', 'desc'),
+        limit(100)
       );
     }
 
     const unsubS = onSnapshot(qSupplierPrices, (snap) => {
-      const docs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      setSupplierPrices(docs);
-      setCurrentPage(1);
+      setSupplierPrices(snap.docs.map(d => ({ id: d.id, ...d.data() })));
     }, (err) => {
-      console.warn("Query error, using absolute fallback:", err);
-      const fallbackQ = query(collection(db, 'supplierPrices'), limit(50));
+      console.warn("Query error, falling back to basic query:", err);
+      const fallbackQ = query(collection(db, 'supplierPrices'), limit(100));
       onSnapshot(fallbackQ, (fallbackSnap) => {
         setSupplierPrices(fallbackSnap.docs.map(d => ({ id: d.id, ...d.data() })));
       });
@@ -198,9 +191,8 @@ export default function Suppliers() {
       unsubS();
       unsubL();
     };
-  }, [ledgerViewMode, selectedLedgerMonth]);
+  }, [ledgerFilterMode, selectedLedgerMonth]);
 
-  // 🌟 ຈັດລຽງວັນທີໃນ JavaScript (ໄວ 0.001 ວິນາທີ ແລະ ບໍ່ມີທາງຕິດ Error)
   const sortedSupplierPrices = useMemo(() => {
     return [...supplierPrices].sort((a, b) => {
       const dateA = toStandardDateString(a.date || a.createdAt);
@@ -210,14 +202,7 @@ export default function Suppliers() {
     });
   }, [supplierPrices]);
 
-  // Pagination (ແບ່ງໜ້າລະ 25 ລາຍການ)
-  const paginatedSupplierPrices = useMemo(() => {
-    const start = (currentPage - 1) * pageSize;
-    return sortedSupplierPrices.slice(start, start + pageSize);
-  }, [sortedSupplierPrices, currentPage]);
-
-  const totalPages = Math.ceil(sortedSupplierPrices.length / pageSize) || 1;
-
+  // ລວມຍອດເງິນຂອງເດືອນທີ່ກຳລັງສະແດງ
   const ledgerTotalLAK = useMemo(() => {
     return sortedSupplierPrices.reduce((acc, p) => acc + Number(p.totalPriceLAK || 0), 0);
   }, [sortedSupplierPrices]);
@@ -225,7 +210,7 @@ export default function Suppliers() {
   const handlePrevMonth = () => setLedgerDate(prev => subMonths(prev, 1));
   const handleNextMonth = () => setLedgerDate(prev => addMonths(prev, 1));
 
-  // ບີບອັດຮູບ Base64 ໃຫ້ເຫຼືອຂະໜາດນ້ອຍ (< 45KB)
+  // Image Processing
   const processImageFile = (file: File) => {
     if (!file || !file.type.startsWith('image/')) {
       alert(i18n.language === 'la' ? 'ກະລຸນາເລືອກໄຟລ໌ຮູບພາບ (JPG, PNG)' : 'Please select an image file.');
@@ -237,13 +222,13 @@ export default function Suppliers() {
       img.src = event.target?.result as string;
       img.onload = () => {
         const canvas = document.createElement('canvas');
-        const MAX_WIDTH = 750;
+        const MAX_WIDTH = 800;
         const scaleSize = MAX_WIDTH / img.width;
         canvas.width = img.width > MAX_WIDTH ? MAX_WIDTH : img.width;
         canvas.height = img.width > MAX_WIDTH ? (img.height * scaleSize) : img.height;
         const ctx = canvas.getContext('2d');
         ctx?.drawImage(img, 0, 0, canvas.width, canvas.height);
-        const compressedBase64 = canvas.toDataURL('image/jpeg', 0.45);
+        const compressedBase64 = canvas.toDataURL('image/jpeg', 0.5);
         setBillImageBase64(compressedBase64);
       };
     };
@@ -353,7 +338,7 @@ Format:
       }
 
       if (!aiResultJson) {
-        throw new Error(lastErrorMessage || 'ບໍ່ພົບ Model ທີ່ຮອງຮັບ');
+        throw new Error(lastErrorMessage || 'ບໍ່ພົບ Model ທີ່ຮອງຮັບໃນ API Key ນີ້');
       }
 
       if (aiResultJson.supplier) {
@@ -527,7 +512,6 @@ Format:
     }, 0);
   }, [billItems, currency, exchangeRate]);
 
-  // 🌟 ຕິດຮູບ Base64 ສະເພາະແຖວທຳອິດ ເພື່ອຕັດການແບກຮູບຊ້ຳຊ້ອນ 80%
   const handleSaveBillBatch = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!supplier) {
@@ -561,12 +545,10 @@ Format:
         const totalOriginal = item.priceMode === 'total' ? Number(item.priceOriginal) : singlePriceOriginal * qty;
         const totalLAK = totalOriginal * finalRate;
 
-        const imageToSave = (i === 0) ? (billImageBase64 || '') : '';
-
         await addDoc(collection(db, 'supplierPrices'), {
           billNo: generatedBillNo,
           batchGroupId,
-          billImageUrl: imageToSave,
+          billImageUrl: billImageBase64 || '',
           billRemark: billRemark.trim(),
           productId: item.productId,
           supplier,
@@ -634,16 +616,11 @@ Format:
             <Truck className="w-6 h-6 animate-pulse" />
           </div>
           <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-sm font-black uppercase tracking-wider text-slate-900 dark:text-white">
-                {i18n.language === 'la' ? 'ລະບົບຈັດຊື້ & ຜູ້ສະໜອງ (Supplier Procurement)' : 'Supplier Procurement Desk'}
-              </h2>
-              <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 text-[9px] font-black uppercase flex items-center gap-1">
-                <Zap className="w-2.5 h-2.5" /> Fast Load Active
-              </span>
-            </div>
+            <h2 className="text-sm font-black uppercase tracking-wider text-slate-900 dark:text-white">
+              {i18n.language === 'la' ? 'ລະບົບຈັດຊື້ & ຜູ້ສະໜອງ (Supplier Procurement)' : 'Supplier Procurement Desk'}
+            </h2>
             <p className="text-[10px] text-slate-400 font-bold uppercase mt-0.5">
-              {products.length} ສິນຄ້າໃນຄັງ • ສະແດງ {sortedSupplierPrices.length} ບິນ
+              {products.length} ສິນຄ້າໃນຄັງ • ສະແດງ {supplierPrices.length} ບິນ
             </p>
           </div>
         </div>
@@ -1029,11 +1006,11 @@ Format:
           </div>
         </div>
 
-        {/* RIGHT: Active Procurement Ledger (High-Speed Engine) */}
+        {/* RIGHT: Active Procurement Ledger (ດຶງສະເພາະເດືອນທີ່ເລືອກ) */}
         <div className="xl:col-span-7 space-y-4">
           <div className="bg-white dark:bg-[#073069] rounded-3xl border border-slate-200/80 dark:border-white/10 shadow-xl overflow-hidden">
             
-            {/* ແຖບເລືອກໂໝດ ແລະ ປະຕິທິນ */}
+            {/* 🌟 ແຖບເລືອກເດືອນ ແລະ ປຸ່ມສະຫຼັບໂໝດ */}
             <div className="p-4 border-b border-slate-100 dark:border-white/5 space-y-3">
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
                 <div>
@@ -1042,11 +1019,12 @@ Format:
                     <span>Active Procurement Ledger</span>
                   </h3>
                   <span className="text-[10px] text-slate-400 font-bold uppercase">
-                    ສະແດງ {sortedSupplierPrices.length} ບິນ • ລວມ: <strong className="text-emerald-600 font-mono text-xs">{Math.round(ledgerTotalLAK).toLocaleString()} ₭</strong>
+                    ສະແດງ {sortedSupplierPrices.length} ບິນ • ລວມ: <strong className="text-emerald-600 font-mono">{Math.round(ledgerTotalLAK).toLocaleString()} ₭</strong>
                   </span>
                 </div>
 
                 <div className="flex items-center gap-2">
+                  {/* ປຸ່ມ Excel Export */}
                   <button onClick={() => {
                     const headers = ['Bill No', 'Date', 'Product', 'Supplier', 'Price LAK', 'Total LAK', 'Qty', 'Unit'];
                     const rows = sortedSupplierPrices.map(p => [
@@ -1061,65 +1039,60 @@ Format:
                     ]);
                     const worksheet = utils.aoa_to_sheet([headers, ...rows]);
                     const workbook = utils.book_new();
-                    utils.book_append_sheet(workbook, worksheet, `Suppliers_${ledgerViewMode}`);
-                    writeFile(workbook, `Suppliers_${ledgerViewMode}.xlsx`);
+                    utils.book_append_sheet(workbook, worksheet, `Suppliers_${selectedLedgerMonth}`);
+                    writeFile(workbook, `Suppliers_${selectedLedgerMonth}.xlsx`);
                   }} className="px-3 py-1.5 bg-slate-100 dark:bg-white/10 rounded-xl text-xs font-bold uppercase text-blue-500 cursor-pointer">
                     <Download className="w-3 h-3 inline mr-1" /> Excel
                   </button>
                 </div>
               </div>
 
-              {/* 🌟 ປຸ່ມສະຫຼັບໂໝດ: "ບິນຫຼ້າສຸດ" VS "ເລືອກຕາມເດືອນ" */}
+              {/* 🌟 ປຸ່ມຄວບຄຸມ: ເລື່ອນເດືອນ < > ຫຼື ເລືອກໂໝດ 100 ບິນຫຼ້າສຸດ */}
               <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100 dark:border-white/5">
-                <div className="flex bg-slate-100 dark:bg-black/20 p-1 rounded-xl text-[10px] font-black uppercase">
+                <div className="flex items-center gap-1.5">
                   <button
-                    onClick={() => setLedgerViewMode('latest')}
-                    className={`px-3 py-1 rounded-lg cursor-pointer transition-all ${ledgerViewMode === 'latest' ? 'bg-[#052659] text-white shadow-xs' : 'text-slate-500'}`}
+                    onClick={handlePrevMonth}
+                    disabled={ledgerFilterMode !== 'month'}
+                    className="p-1.5 rounded-lg bg-slate-100 dark:bg-white/10 hover:bg-slate-200 text-slate-600 dark:text-white cursor-pointer disabled:opacity-30"
+                    title="ເດືອນກ່ອນໜ້າ"
                   >
-                    ⚡ ບິນຫຼ້າສຸດ (ທຸກເດືອນ)
+                    <ChevronLeft className="w-3.5 h-3.5" />
                   </button>
+
+                  <div className="flex items-center gap-1.5 px-3 py-1 bg-indigo-50 dark:bg-white/5 border border-indigo-500/20 rounded-xl text-xs font-black text-indigo-600 dark:text-indigo-300">
+                    <Calendar className="w-3.5 h-3.5" />
+                    <span>ເດືອນ {selectedLedgerMonth}</span>
+                  </div>
+
                   <button
-                    onClick={() => setLedgerViewMode('month')}
-                    className={`px-3 py-1 rounded-lg cursor-pointer transition-all ${ledgerViewMode === 'month' ? 'bg-[#052659] text-white shadow-xs' : 'text-slate-500'}`}
+                    onClick={handleNextMonth}
+                    disabled={ledgerFilterMode !== 'month'}
+                    className="p-1.5 rounded-lg bg-slate-100 dark:bg-white/10 hover:bg-slate-200 text-slate-600 dark:text-white cursor-pointer disabled:opacity-30"
+                    title="ເດືອນຖັດໄປ"
                   >
-                    ເລືອກຕາມເດືອນ
+                    <ChevronRight className="w-3.5 h-3.5" />
                   </button>
                 </div>
 
-                {/* ປະຕິທິນ (ສະແດງສະເພາະຕອນເລືອກໂໝດ 'month') */}
-                {ledgerViewMode === 'month' && (
-                  <div className="flex items-center gap-1.5">
-                    <button
-                      onClick={handlePrevMonth}
-                      className="p-1.5 rounded-lg bg-slate-100 dark:bg-white/10 hover:bg-slate-200 text-slate-600 dark:text-white cursor-pointer"
-                      title="ເດືອນກ່ອນໜ້າ"
-                    >
-                      <ChevronLeft className="w-3.5 h-3.5" />
-                    </button>
-
-                    <div className="flex items-center gap-1.5 px-3 py-1 bg-indigo-50 dark:bg-white/5 border border-indigo-500/20 rounded-xl text-xs font-black text-indigo-600 dark:text-indigo-300">
-                      <Calendar className="w-3.5 h-3.5" />
-                      <span>ເດືອນ {selectedLedgerMonth}</span>
-                    </div>
-
-                    <button
-                      onClick={handleNextMonth}
-                      className="p-1.5 rounded-lg bg-slate-100 dark:bg-white/10 hover:bg-slate-200 text-slate-600 dark:text-white cursor-pointer"
-                      title="ເດືອນຖັດໄປ"
-                    >
-                      <ChevronRight className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                )}
-
-                <span className="text-[10px] text-slate-400 font-bold uppercase">
-                  ໜ້າ {currentPage} / {totalPages} ({sortedSupplierPrices.length} ລາຍການ)
-                </span>
+                {/* ປຸ່ມສະຫຼັບໂໝດ: ຕາມເດືອນ VS 100 ບິນຫຼ້າສຸດ */}
+                <div className="flex bg-slate-100 dark:bg-black/20 p-1 rounded-xl text-[10px] font-black uppercase">
+                  <button
+                    onClick={() => setLedgerFilterMode('month')}
+                    className={`px-3 py-1 rounded-lg cursor-pointer transition-all ${ledgerFilterMode === 'month' ? 'bg-indigo-600 text-white' : 'text-slate-500'}`}
+                  >
+                    ສະເພາະເດືອນນີ້
+                  </button>
+                  <button
+                    onClick={() => setLedgerFilterMode('latest')}
+                    className={`px-3 py-1 rounded-lg cursor-pointer transition-all ${ledgerFilterMode === 'latest' ? 'bg-indigo-600 text-white' : 'text-slate-500'}`}
+                  >
+                    100 ບິນຫຼ້າສຸດ
+                  </button>
+                </div>
               </div>
             </div>
 
-            {/* Table */}
-            <div className="overflow-x-auto max-h-[500px]">
+            <div className="overflow-x-auto max-h-[600px]">
               <table className="w-full text-left text-xs">
                 <thead className="text-[9px] font-bold uppercase text-slate-400 bg-slate-50 dark:bg-white/5">
                   <tr>
@@ -1132,17 +1105,14 @@ Format:
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-white/5">
-                  {paginatedSupplierPrices.length === 0 ? (
+                  {sortedSupplierPrices.length === 0 ? (
                     <tr>
                       <td colSpan={6} className="p-8 text-center text-slate-400 text-xs">
-                        {ledgerViewMode === 'month' 
-                          ? `ບໍ່ພົບບິນຈັດຊື້ໃນເດືອນ ${selectedLedgerMonth} (ກະລຸນາກົດປຸ່ມ [◀] ເພື່ອເບິ່ງເດືອນຜ່ານມາ ຫຼື ກົດປຸ່ມ 'ບິນຫຼ້າສຸດ')`
-                          : 'ຍັງບໍ່ມີຂໍ້ມູນໃບບິນຈັດຊື້'
-                        }
+                        ບໍ່ພົບບິນຈັດຊື້ໃນເດືອນ {selectedLedgerMonth} (ລອງກົດເລືອກເດືອນອື່ນ ຫຼື 100 ບິນຫຼ້າສຸດ)
                       </td>
                     </tr>
                   ) : (
-                    paginatedSupplierPrices.map(p => (
+                    sortedSupplierPrices.map(p => (
                       <tr key={p.id} className="hover:bg-slate-50 dark:hover:bg-white/5">
                         <td className="p-3.5">
                           <span className="font-mono text-[9px] font-bold text-emerald-500 block">{p.billNo}</span>
@@ -1182,30 +1152,6 @@ Format:
                 </tbody>
               </table>
             </div>
-
-            {/* Pagination Controls */}
-            {totalPages > 1 && (
-              <div className="p-3 border-t border-slate-100 dark:border-white/5 flex justify-between items-center text-xs">
-                <button
-                  disabled={currentPage === 1}
-                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                  className="px-3 py-1 rounded-lg bg-slate-100 dark:bg-white/10 text-slate-700 dark:text-white font-bold disabled:opacity-30 cursor-pointer"
-                >
-                  ◀ ກ່ອນໜ້າ
-                </button>
-                <span className="text-[11px] font-bold text-slate-400">
-                  ໜ້າ {currentPage} ຈາກ {totalPages}
-                </span>
-                <button
-                  disabled={currentPage === totalPages}
-                  onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                  className="px-3 py-1 rounded-lg bg-slate-100 dark:bg-white/10 text-slate-700 dark:text-white font-bold disabled:opacity-30 cursor-pointer"
-                >
-                  ຖັດໄປ ▶
-                </button>
-              </div>
-            )}
-
           </div>
         </div>
 
@@ -1305,6 +1251,10 @@ Format:
                 </span>
               </div>
             </div>
+
+            <p className="text-xs text-slate-500 dark:text-slate-300">
+              ກວດສອບການຈັບຄູ່ສິນຄ້າ. <strong>ເມື່ອທ່ານເລືອກຈັບຄູ່ແລ້ວ ລະບົບຈະ Learn ແລະ ຈື່ຈຳໄວ້ສຳລັບໃບບິນຮອບຕໍ່ໆໄປ:</strong>
+            </p>
 
             <div className="flex-1 overflow-y-auto space-y-2.5 pr-1">
               {scannedItems.map((item, idx) => (
