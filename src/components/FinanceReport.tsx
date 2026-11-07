@@ -3,19 +3,18 @@ import { db, handleFirestoreError, OperationType } from '../firebase';
 import { collection, onSnapshot } from 'firebase/firestore';
 import { 
   ArrowUpRight, ArrowDownRight, Percent, 
-  Calendar, Download, Clock, Sparkles, Filter
+  Calendar, Download, Clock, Filter
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { utils, writeFile } from 'xlsx';
 import { useTranslation } from 'react-i18next';
 
-// 🌟 ຟັງຊັນແປງວັນທີອັດສະລິຍະ: ຮອງຮັບທັງ ປີ 2569 (ພ.ສ.) ➔ 2026 (ຄ.ສ.), DD/MM/YYYY, Timestamp
+// 🌟 ຟັງຊັນແປງວັນທີອັດສະລິຍະ (ຮອງຮັບທັງ 2569 -> 2026, DD/MM/YYYY, Timestamp)
 const extractYearMonthSafe = (raw: any): string => {
   if (!raw) return '';
 
   let d: Date | null = null;
 
-  // 1. ຖ້າເປັນ Firestore Timestamp
   if (raw && typeof raw.toDate === 'function') {
     try { d = raw.toDate(); } catch {}
   } else if (raw && typeof raw.seconds === 'number') {
@@ -26,27 +25,24 @@ const extractYearMonthSafe = (raw: any): string => {
 
   if (d && !isNaN(d.getTime())) {
     let y = d.getFullYear();
-    if (y > 2400) y -= 543; // ແປງ 2569 ➔ 2026
+    if (y > 2400) y -= 543; // ແປງ 2569 -> 2026
     const m = String(d.getMonth() + 1).padStart(2, '0');
-    return `${y}-${m}`;
+    return y + '-' + m;
   }
 
-  // 2. ຖ້າເປັນ String
   if (typeof raw === 'string') {
     const clean = raw.trim().split('T')[0].split(' ')[0];
 
-    // ຮູບແບບ YYYY-MM-DD
     if (clean.includes('-')) {
       const parts = clean.split('-');
       if (parts.length >= 2) {
         let y = parseInt(parts[0]);
-        if (y > 2400) y -= 543; // ແປງ 2569 ➔ 2026
+        if (y > 2400) y -= 543;
         const m = parts[1].padStart(2, '0');
-        if (!isNaN(y)) return `${y}-${m}`;
+        if (!isNaN(y)) return y + '-' + m;
       }
     }
 
-    // ຮູບແບບ DD/MM/YYYY ຫຼື MM/DD/YYYY
     if (clean.includes('/')) {
       const parts = clean.split('/');
       if (parts.length === 3) {
@@ -55,9 +51,8 @@ const extractYearMonthSafe = (raw: any): string => {
 
         const p0 = parseInt(parts[0]);
         const p1 = parseInt(parts[1]);
-        // ຖ້າຕົວທຳອິດ > 12 ສະແດງວ່າແມ່ນວັນທີ (DD/MM/YYYY), ຕົວທີສອງແມ່ນເດືອນ
         const m = (p0 > 12 ? p1 : (p1 > 12 ? p0 : p1)).toString().padStart(2, '0');
-        if (!isNaN(y)) return `${y}-${m}`;
+        if (!isNaN(y)) return y + '-' + m;
       }
     }
   }
@@ -72,11 +67,9 @@ export default function FinanceReport({ selectedBranch }: { selectedBranch?: str
   const [transactions, setTransactions] = useState<any[]>([]);
   const [supplierPrices, setSupplierPrices] = useState<any[]>([]);
 
-  // ໂໝດເລືອກ: 'month' ຫຼື 'all'
   const [filterMode, setFilterMode] = useState<'month' | 'all'>('month');
   const [selectedMonth, setSelectedMonth] = useState<string>('2026-10');
 
-  // 1. ດຶງຂໍ້ມູນ Real-time ຈາກ Firestore
   useEffect(() => {
     const unsubT = onSnapshot(collection(db, 'transactions'), snap => {
       const all = snap.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -93,7 +86,7 @@ export default function FinanceReport({ selectedBranch }: { selectedBranch?: str
     };
   }, [currentBranch]);
 
-  // 🌟 2. ກວດສອບອັດຕະໂນມັດວ່າ "ມີເດືອນໃດແດ່ທີ່ມີບິນແທ້ໆໃນຖານຂໍ້ມູນ"
+  // ກວດຫາເດືອນທີ່ມີຂໍ້ມູນຕົວຈິງ
   const availableMonthsList = useMemo(() => {
     const monthCounts: Record<string, number> = {};
     
@@ -107,17 +100,17 @@ export default function FinanceReport({ selectedBranch }: { selectedBranch?: str
     return Object.entries(monthCounts).sort((a, b) => b[0].localeCompare(a[0]));
   }, [transactions]);
 
-  // ຖ້າເດືອນທີ່ເລືອກຢູ່ບໍ່ມີຂໍ້ມູນ ໃຫ້ເລືອກເດືອນຫຼ້າສຸດທີ່ມີຂໍ້ມູນອັດຕະໂນມັດ
+  // ເລືອກເດືອນຫຼ້າສຸດທີ່ມີບິນອັດຕະໂນມັດ
   useEffect(() => {
     if (availableMonthsList.length > 0 && filterMode === 'month') {
       const exists = availableMonthsList.some(([m]) => m === selectedMonth);
       if (!exists) {
-        setSelectedMonth(availableMonthsList[0][0]); // ເອົາເດືອນຫຼ້າສຸດທີ່ມີບິນ
+        setSelectedMonth(availableMonthsList[0][0]);
       }
     }
   }, [availableMonthsList]);
 
-  // 3. ຄິດໄລ່ຕົວເລກການເງິນ
+  // ຄິດໄລ່ຕົວເລກການເງິນ
   const reportData = useMemo(() => {
     let totalRevenue = 0;
     let totalCogs = 0;
@@ -207,7 +200,7 @@ export default function FinanceReport({ selectedBranch }: { selectedBranch?: str
       ['Total Revenue', reportData.totalRevenue],
       ['COGS (Purchasing)', reportData.totalCogs],
       ['Gross Profit', reportData.grossProfit],
-      ['Gross Margin %', `${reportData.grossMargin.toFixed(1)}%`],
+      ['Gross Margin %', reportData.grossMargin.toFixed(1) + '%'],
       ['Operating Expenses (OPEX)', reportData.totalOpex],
       ['Net Profit', reportData.netProfit],
       ['Dividends Paid', reportData.totalDividends],
@@ -217,8 +210,8 @@ export default function FinanceReport({ selectedBranch }: { selectedBranch?: str
     ];
     const ws = utils.aoa_to_sheet([headers, ...rows]);
     const wb = utils.book_new();
-    utils.book_append_sheet(wb, ws, `FinanceReport_${filterMode === 'all' ? 'All' : selectedMonth}`);
-    writeFile(wb, `FinanceReport_${filterMode === 'all' ? 'All' : selectedMonth}.xlsx`);
+    utils.book_append_sheet(wb, ws, "FinanceReport");
+    writeFile(wb, "FinanceReport_" + (filterMode === 'all' ? 'All' : selectedMonth) + ".xlsx");
   };
 
   return (
@@ -240,7 +233,7 @@ export default function FinanceReport({ selectedBranch }: { selectedBranch?: str
               </span>
             </div>
             <p className="text-[10.5px] text-slate-400 font-bold uppercase mt-0.5">
-              {filterMode === 'all' ? 'ຍອດລວມທັງໝົດ (All-Time)' : `ເດືອນ ${selectedMonth}`} ({reportData.filteredTxCount} transactions)
+              {(filterMode === 'all' ? 'ຍອດລວມທັງໝົດ (All-Time)' : 'ເດືອນ ' + selectedMonth) + ' (' + reportData.filteredTxCount + ' transactions)'}
             </p>
           </div>
         </div>
@@ -263,7 +256,10 @@ export default function FinanceReport({ selectedBranch }: { selectedBranch?: str
           <div className="flex bg-slate-100 dark:bg-black/20 p-1 rounded-xl text-xs font-bold">
             <button
               onClick={() => setFilterMode('all')}
-              className={`px-3 py-1 rounded-lg cursor-pointer transition-all ${filterMode === 'all' ? 'bg-[#052659] text-white shadow-xs' : 'text-slate-500'}`}
+              className={
+                "px-3 py-1 rounded-lg cursor-pointer transition-all " +
+                (filterMode === 'all' ? "bg-[#052659] text-white shadow-xs" : "text-slate-500")
+              }
             >
               ທັງໝົດ
             </button>
@@ -279,7 +275,7 @@ export default function FinanceReport({ selectedBranch }: { selectedBranch?: str
         </div>
       </div>
 
-      {/* 🌟 ແຖບປຸ່ມເດືອນທີ່ມີຂໍ້ມູນຕົວຈິງ (ກົດປຸບ ຕົວເລກຂຶ້ນມາທັນທີ!) */}
+      {/* 🌟 ປຸ່ມເລືອກເດືອນທີ່ມີຂໍ້ມູນຕົວຈິງ */}
       {availableMonthsList.length > 0 && (
         <div className="p-3 bg-white dark:bg-[#073069] rounded-2xl border border-slate-200/80 dark:border-white/10 flex items-center gap-2 overflow-x-auto">
           <span className="text-[10px] font-black uppercase text-slate-400 flex items-center gap-1 shrink-0">
@@ -293,13 +289,14 @@ export default function FinanceReport({ selectedBranch }: { selectedBranch?: str
                 setSelectedMonth(mStr);
                 setFilterMode('month');
               }}
-              className={`px-3 py-1 rounded-xl text-xs font-bold shrink-0 cursor-pointer transition-all ${
-                filterMode === 'month' && selectedMonth === mStr
-                  ? 'bg-indigo-600 text-white shadow-md'
-                  : 'bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-slate-300 hover:bg-slate-200'
-              }`}
+              className={
+                "px-3 py-1 rounded-xl text-xs font-bold shrink-0 cursor-pointer transition-all " +
+                (filterMode === 'month' && selectedMonth === mStr
+                  ? "bg-indigo-600 text-white shadow-md"
+                  : "bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-slate-300 hover:bg-slate-200")
+              }
             >
-              ເດືອນ {mStr} <span className="text-[10px] opacity-75">({count} ບິນ)</span>
+              {"ເດືອນ " + mStr} <span className="text-[10px] opacity-75">{"(" + count + " ບິນ)"}</span>
             </button>
           ))}
         </div>
@@ -312,7 +309,7 @@ export default function FinanceReport({ selectedBranch }: { selectedBranch?: str
             <ArrowUpRight className="w-3.5 h-3.5 text-emerald-500" /> TOTAL REVENUE
           </span>
           <p className="text-xl sm:text-2xl font-black font-mono text-emerald-600 dark:text-emerald-400">
-            {Math.round(reportData.totalRevenue).toLocaleString()} ₭
+            {Math.round(reportData.totalRevenue).toLocaleString() + " ₭"}
           </p>
           <p className="text-[9.5px] text-slate-400 uppercase font-bold">CUSTOMER INFLOWS</p>
         </div>
@@ -322,7 +319,7 @@ export default function FinanceReport({ selectedBranch }: { selectedBranch?: str
             <ArrowDownRight className="w-3.5 h-3.5 text-rose-500" /> COGS (PURCHASING)
           </span>
           <p className="text-xl sm:text-2xl font-black font-mono text-rose-600 dark:text-rose-400">
-            {Math.round(reportData.totalCogs).toLocaleString()} ₭
+            {Math.round(reportData.totalCogs).toLocaleString() + " ₭"}
           </p>
           <p className="text-[9.5px] text-slate-400 uppercase font-bold">MATERIAL COSTS</p>
         </div>
@@ -332,14 +329,78 @@ export default function FinanceReport({ selectedBranch }: { selectedBranch?: str
             <Percent className="w-3.5 h-3.5 text-blue-500" /> % GROSS MARGIN
           </span>
           <p className="text-xl sm:text-2xl font-black font-mono text-blue-600 dark:text-blue-400">
-            {reportData.grossMargin.toFixed(1)}%
+            {reportData.grossMargin.toFixed(1) + "%"}
           </p>
-          <p className="text-[9.5px] text-slate-400 font-mono">GP: {Math.round(reportData.grossProfit).toLocaleString()} ₭</p>
+          <p className="text-[9.5px] text-slate-400 font-mono">{"GP: " + Math.round(reportData.grossProfit).toLocaleString() + " ₭"}</p>
         </div>
 
-        <div className={`p-5 rounded-3xl border shadow-sm space-y-1 ${
-          reportData.netProfit >= 0 
-            ? 'bg-emerald-50/50 dark:bg-emerald-950/20 border-emerald-500/20' 
-            : 'bg-rose-50/50 dark:bg-rose-950/20 border-rose-500/20'
-        }`}>
-          <span className={`
+        <div className={
+          "p-5 rounded-3xl border shadow-sm space-y-1 " +
+          (reportData.netProfit >= 0 
+            ? "bg-emerald-50/50 dark:bg-emerald-950/20 border-emerald-500/20" 
+            : "bg-rose-50/50 dark:bg-rose-950/20 border-rose-500/20")
+        }>
+          <span className={
+            "text-[10px] font-black uppercase " +
+            (reportData.netProfit >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400")
+          }>
+            NET PROFIT
+          </span>
+          <p className={
+            "text-xl sm:text-2xl font-black font-mono " +
+            (reportData.netProfit >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400")
+          }>
+            {Math.round(reportData.netProfit).toLocaleString() + " ₭"}
+          </p>
+          <p className="text-[9.5px] text-slate-400 font-bold uppercase">
+            {"OPEX: " + Math.round(reportData.totalOpex).toLocaleString() + " ₭"}
+          </p>
+        </div>
+
+        <div className="bg-amber-50/50 dark:bg-white/5 p-5 rounded-3xl border border-amber-500/20 shadow-sm space-y-1 col-span-2 lg:col-span-1">
+          <span className="text-[10px] font-black uppercase text-amber-600 dark:text-amber-400">
+            ESTIMATED ROI
+          </span>
+          <p className="text-xl sm:text-2xl font-black font-mono text-amber-600 dark:text-amber-400">
+            {reportData.roi.toFixed(1) + "%"}
+          </p>
+          <p className="text-[9.5px] text-slate-400 uppercase font-bold">RETURN ON TOTAL COST</p>
+        </div>
+      </div>
+
+      {/* Row 2: ຍອດເງິນຕາມຊ່ອງທາງ */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="bg-white dark:bg-[#073069] p-5 rounded-3xl border border-slate-200/80 dark:border-white/10 shadow-sm space-y-1">
+          <div className="flex justify-between items-center">
+            <span className="text-[10px] font-black uppercase text-slate-400">ເງິນສົດ (CASH)</span>
+            <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 text-[9px] font-black uppercase">Cash</span>
+          </div>
+          <p className="text-2xl font-black font-mono text-slate-800 dark:text-white">
+            {Math.round(reportData.netCash).toLocaleString() + " ₭"}
+          </p>
+        </div>
+
+        <div className="bg-white dark:bg-[#073069] p-5 rounded-3xl border border-slate-200/80 dark:border-white/10 shadow-sm space-y-1">
+          <div className="flex justify-between items-center">
+            <span className="text-[10px] font-black uppercase text-slate-400">BCEL ONEPAY</span>
+            <span className="px-2 py-0.5 rounded-full bg-rose-500/10 text-rose-600 text-[9px] font-black uppercase">OnePay</span>
+          </div>
+          <p className="text-2xl font-black font-mono text-slate-800 dark:text-white">
+            {Math.round(reportData.netOnepay).toLocaleString() + " ₭"}
+          </p>
+        </div>
+
+        <div className="bg-white dark:bg-[#073069] p-5 rounded-3xl border border-slate-200/80 dark:border-white/10 shadow-sm space-y-1">
+          <div className="flex justify-between items-center">
+            <span className="text-[10px] font-black uppercase text-slate-400">ທະນາຄານ LDB</span>
+            <span className="px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-600 text-[9px] font-black uppercase">LDB</span>
+          </div>
+          <p className="text-2xl font-black font-mono text-slate-800 dark:text-white">
+            {Math.round(reportData.netLdb).toLocaleString() + " ₭"}
+          </p>
+        </div>
+      </div>
+
+    </div>
+  );
+}
