@@ -1,12 +1,9 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
-import { 
-  initializeFirestore, 
-  persistentLocalCache, 
-  persistentMultipleTabManager 
-} from 'firebase/firestore';
+import { getFirestore } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 
+// ✅ Firebase Configuration ຫຼັກຂອງ La Dolce Workspace
 const firebaseConfig = {
   apiKey: "AIzaSyDttcZJfXZ4uI7mQiR-wv0pvKIGlreLh_0",
   authDomain: "la-dolce-workspace-f975d.firebaseapp.com",
@@ -20,13 +17,8 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 
-// 🌟 ເປີດ IndexedDB Cache: ເຮັດໃຫ້ເປີດໜ້າເວັບປຸບ ຂໍ້ມູນຂຶ້ນມາທັນທີ 0.1 ວິນາທີຈາກເຄື່ອງ!
-export const db = initializeFirestore(app, {
-  localCache: persistentLocalCache({
-    tabManager: persistentMultipleTabManager()
-  })
-});
-
+// ✅ ຕໍ່ກົງຫາຖານຂໍ້ມູນຫຼັກ (Direct Cloud) ທີ່ມີຄວາມສະຖຽນ ແລະ ດຶງຂໍ້ມູນຄົບ 100%
+export const db = getFirestore(app);
 export const storage = getStorage(app);
 
 export enum OperationType {
