@@ -3,16 +3,23 @@ import { auth, db } from '../firebase';
 import { 
   collection, addDoc, onSnapshot, 
   deleteDoc, doc, setDoc, serverTimestamp,
-  query, where, orderBy, limit 
+  query, where, limit 
 } from 'firebase/firestore';
 import { 
   Plus, Trash2, Search, Download, 
   List, Receipt, Image as ImageIcon, Upload, Eye, X, Truck,
-  Sparkles, Bot, Check, Key, Calendar, ChevronLeft, ChevronRight, Zap, RefreshCw
+  Sparkles, Bot, Check, Key, Calendar, ChevronLeft, ChevronRight, Zap, CreditCard, Wallet, Building2
 } from 'lucide-react';
 import { format, subMonths, addMonths } from 'date-fns';
 import { utils, writeFile } from 'xlsx';
 import { useTranslation } from 'react-i18next';
+
+// ຊື່ເດືອນພາສາລາວ ແລະ ອັງກິດ
+const LAO_MONTHS = [
+  'ມັງກອນ (Jan)', 'ກຸມພາ (Feb)', 'ມີນາ (Mar)', 'ເມສາ (Apr)', 
+  'ພຶດສະພາ (May)', 'ມິຖຸນາ (Jun)', 'ກໍລະກົດ (Jul)', 'ສິງຫາ (Aug)', 
+  'ກັນຍາ (Sep)', 'ຕຸລາ (Oct)', 'ພະຈິກ (Nov)', 'ທັນວາ (Dec)'
+];
 
 const SUPPLIER_CODES: Record<string, string> = {
   'CHANHOM': 'CH',
@@ -26,7 +33,7 @@ const SUPPLIER_CODES: Record<string, string> = {
   'OTHER': 'OT'
 };
 
-export type PaymentMethod = 'Cash' | 'Onepay' | 'LDB';
+export type PaymentMethod = 'Onepay' | 'LDB' | 'Cash';
 export type ExpenseCategory = 'purchasing' | 'rental' | 'salary' | 'operation' | 'admin' | 'sales' | 'other';
 
 interface FormItemRow {
@@ -59,11 +66,11 @@ const toStandardDateString = (raw: any): string => {
     const clean = raw.trim().split('T')[0];
     if (clean.includes('-')) {
       const parts = clean.split('-');
-      if (parts.length === 3) return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+      if (parts.length === 3) return parts[0] + '-' + parts[1].padStart(2, '0') + '-' + parts[2].padStart(2, '0');
     }
     if (clean.includes('/')) {
       const parts = clean.split('/');
-      if (parts.length === 3 && parts[2].length === 4) return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+      if (parts.length === 3 && parts[2].length === 4) return parts[2] + '-' + parts[1].padStart(2, '0') + '-' + parts[0].padStart(2, '0');
     }
     return clean;
   }
@@ -82,12 +89,11 @@ export default function Suppliers() {
   const [entryMode, setEntryMode] = useState<'batch' | 'single'>('batch');
   const [isDragging, setIsDragging] = useState(false);
 
-  // 🌟 ໂໝດດຶງຂໍ້ມູນ: 'latest' (100 ບິນຫຼ້າສຸດ) ຫຼື 'month' (ສະເພາະເດືອນທີ່ເລືອກ)
-  const [ledgerMode, setLedgerMode] = useState<'latest' | 'month'>('latest');
-  const [ledgerDate, setLedgerDate] = useState<Date>(new Date());
-  const selectedLedgerMonth = useMemo(() => format(ledgerDate, 'yyyy-MM'), [ledgerDate]);
+  // 🌟 ຕັ້ງຄ່າເລີ່ມຕົ້ນ: ເລືອກສະເພາະເດືອນປັດຈຸບັນ (Default to Current Month)
+  const [currentDate, setCurrentDate] = useState<Date>(new Date());
+  const selectedLedgerMonth = useMemo(() => format(currentDate, 'yyyy-MM'), [currentDate]);
 
-  // 🌟 State Loading Animation ສຳລັບຕາຕະລາງ
+  // 🌟 Loading Animation State
   const [isLedgerLoading, setIsLedgerLoading] = useState<boolean>(true);
 
   // Pagination
@@ -113,12 +119,12 @@ export default function Suppliers() {
   const [scannedCurrency, setScannedCurrency] = useState<string>('LAK');
   const [receiptLearnings, setReceiptLearnings] = useState<Record<string, any>>({});
 
-  // Form State
+  // Form State (Default OnePay)
   const [billDate, setBillDate] = useState<string>(format(new Date(), 'yyyy-MM-dd'));
   const [billTime, setBillTime] = useState<string>(format(new Date(), 'HH:mm'));
   const [supplier, setSupplier] = useState<string>('CHANHOM');
   const [category, setCategory] = useState<ExpenseCategory>('purchasing');
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('Cash');
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('Onepay');
   const [currency, setCurrency] = useState<string>('LAK');
   const [exchangeRate, setExchangeRate] = useState<number>(1);
   const [billImageBase64, setBillImageBase64] = useState<string>('');
@@ -145,15 +151,15 @@ export default function Suppliers() {
     try {
       const parts = billDate.split('-');
       if (parts.length === 3) {
-        const ddmmyyyy = `${parts[2]}${parts[1]}${parts[0]}`;
+        const ddmmyyyy = parts[2] + parts[1] + parts[0];
         const code = SUPPLIER_CODES[supplier] || (supplier ? supplier.slice(0, 2).toUpperCase() : 'OT');
-        return `#${ddmmyyyy}${code}`;
+        return '#' + ddmmyyyy + code;
       }
     } catch {}
-    return `#${format(new Date(), 'ddMMyyyy')}${SUPPLIER_CODES[supplier] || 'OT'}`;
+    return '#' + format(new Date(), 'ddMMyyyy') + (SUPPLIER_CODES[supplier] || 'OT');
   }, [billDate, supplier]);
 
-  // 🌟 1. ດຶງຂໍ້ມູນໃບບິນແບບເບົາ & ໄວ (100 ບິນຫຼ້າສຸດ ຫຼື ສະເພາະເດືອນທີ່ເລືອກ ພ້ອມ Animation)
+  // 🌟 1. ດຶງສະເພາະບິນຂອງເດືອນທີ່ເລືອກເທົ່ານັ້ນ (On-Demand Loading ເພື່ອຄວາມໄວສູງສຸດ)
   useEffect(() => {
     setIsLedgerLoading(true);
 
@@ -161,32 +167,23 @@ export default function Suppliers() {
       setProducts(snap.docs.map(d => ({ id: d.id, ...d.data() })));
     });
 
-    let qSupplierPrices;
-    if (ledgerMode === 'month') {
-      const monthStart = `${selectedLedgerMonth}-01`;
-      const monthEnd = `${selectedLedgerMonth}-31`;
-      // ດຶງສະເພາະເດືອນທີ່ເລືອກ ບໍ່ເກີນ 150 ບິນ
-      qSupplierPrices = query(
-        collection(db, 'supplierPrices'),
-        where('date', '>=', monthStart),
-        where('date', '<=', monthEnd),
-        limit(150)
-      );
-    } else {
-      // ໂໝດເລີ່ມຕົ້ນ: ດຶງສະເພາະ 100 ບິນຫຼ້າສຸດ (ໄວທີ່ສຸດ ບໍ່ເກີນ 128 MB)
-      qSupplierPrices = query(
-        collection(db, 'supplierPrices'),
-        limit(100)
-      );
-    }
+    const monthStart = selectedLedgerMonth + '-01';
+    const monthEnd = selectedLedgerMonth + '-31';
+
+    // ດຶງສະເພາະຊ່ວງວັນທີຂອງເດືອນນັ້ນ
+    const qSupplierPrices = query(
+      collection(db, 'supplierPrices'),
+      where('date', '>=', monthStart),
+      where('date', '<=', monthEnd)
+    );
 
     const unsubS = onSnapshot(qSupplierPrices, (snap) => {
       const docs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       setSupplierPrices(docs);
       setCurrentPage(1);
-      setIsLedgerLoading(false); // ປິດ Animation ເມື່ອໂຫຼດສຳເລັດ
+      setIsLedgerLoading(false); // ປິດ Loading ເມື່ອໂຫຼດສຳເລັດ
     }, (err) => {
-      console.warn("Query fallback:", err);
+      console.warn("Fallback query for month:", err);
       const fallbackQ = query(collection(db, 'supplierPrices'), limit(50));
       onSnapshot(fallbackQ, (fallbackSnap) => {
         setSupplierPrices(fallbackSnap.docs.map(d => ({ id: d.id, ...d.data() })));
@@ -205,7 +202,7 @@ export default function Suppliers() {
       unsubS();
       unsubL();
     };
-  }, [ledgerMode, selectedLedgerMonth]);
+  }, [selectedLedgerMonth]);
 
   // ຈັດລຽງວັນທີຫຼ້າສຸດມາກ່ອນ
   const sortedSupplierPrices = useMemo(() => {
@@ -217,7 +214,31 @@ export default function Suppliers() {
     });
   }, [supplierPrices]);
 
-  // Pagination (ແບ່ງໜ້າລະ 25 ລາຍການ)
+  // 🌟 ແຍກຍອດ 3 ຊ່ອງທາງ (OnePay, LDB, Cash) ຂອງເດືອນນີ້
+  const paymentBreakdown = useMemo(() => {
+    let onepayTotal = 0;
+    let ldbTotal = 0;
+    let cashTotal = 0;
+
+    sortedSupplierPrices.forEach(p => {
+      const amt = Number(p.totalPriceLAK || 0);
+      const method = String(p.paymentMethod || 'Onepay').toLowerCase();
+
+      if (method.includes('onepay') || method.includes('bcel')) onepayTotal += amt;
+      else if (method.includes('ldb')) ldbTotal += amt;
+      else cashTotal += amt;
+    });
+
+    const grandTotal = onepayTotal + ldbTotal + cashTotal;
+
+    return {
+      onepayTotal,
+      ldbTotal,
+      cashTotal,
+      grandTotal
+    };
+  }, [sortedSupplierPrices]);
+
   const paginatedSupplierPrices = useMemo(() => {
     const start = (currentPage - 1) * pageSize;
     return sortedSupplierPrices.slice(start, start + pageSize);
@@ -225,21 +246,18 @@ export default function Suppliers() {
 
   const totalPages = Math.ceil(sortedSupplierPrices.length / pageSize) || 1;
 
-  const ledgerTotalLAK = useMemo(() => {
-    return sortedSupplierPrices.reduce((acc, p) => acc + Number(p.totalPriceLAK || 0), 0);
-  }, [sortedSupplierPrices]);
-
+  // ປຸ່ມເລື່ອນເດືອນຍ້ອນຫຼັງ < ແລະ ໄປໜ້າ >
   const handlePrevMonth = () => {
     setIsLedgerLoading(true);
-    setLedgerDate(prev => subMonths(prev, 1));
+    setCurrentDate(prev => subMonths(prev, 1));
   };
 
   const handleNextMonth = () => {
     setIsLedgerLoading(true);
-    setLedgerDate(prev => addMonths(prev, 1));
+    setCurrentDate(prev => addMonths(prev, 1));
   };
 
-  // ບີບອັດຮູບ Base64 ໃຫ້ເຫຼືອ < 45KB
+  // ບີບອັດຮູບ Base64
   const processImageFile = (file: File) => {
     if (!file || !file.type.startsWith('image/')) {
       alert(i18n.language === 'la' ? 'ກະລຸນາເລືອກໄຟລ໌ຮູບພາບ (JPG, PNG)' : 'Please select an image file.');
@@ -282,7 +300,7 @@ export default function Suppliers() {
     return () => window.removeEventListener('paste', handlePaste);
   }, []);
 
-  // AI OCR Scanner
+  // AI OCR Scanner (Gemini 2.0 / 2.5)
   const handleScanReceiptWithAi = async () => {
     if (!billImageBase64) {
       alert('ກະລຸນາອັບໂຫຼດຮູບໃບບິນກ່ອນ!');
@@ -331,7 +349,7 @@ Format:
 
       for (const model of CANDIDATE_MODELS) {
         try {
-          const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+          const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent', {
             method: 'POST',
             headers: { 
               'Content-Type': 'application/json',
@@ -454,7 +472,7 @@ Format:
     }
 
     const convertedRows: FormItemRow[] = scannedItems.map((it, idx) => ({
-      id: `ai-item-${Date.now()}-${idx}`,
+      id: 'ai-item-' + Date.now() + '-' + idx,
       productId: it.matchedProductId || '',
       productSearch: it.matchedProductName || it.rawName,
       unit: it.unit || 'UNIT',
@@ -469,7 +487,7 @@ Format:
 
     setBillItems(convertedRows);
     setShowScanReviewModal(false);
-    alert(`🎉 ນຳເຂົ້າສຳເລັດ ${scannedItems.length} ລາຍການ!`);
+    alert('🎉 ນຳເຂົ້າສຳເລັດ ' + scannedItems.length + ' ລາຍການ!');
   };
 
   const handleRemoveScannedItem = (index: number) => {
@@ -501,7 +519,7 @@ Format:
     setBillItems(prev => [
       ...prev,
       {
-        id: `item-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+        id: 'item-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5),
         productId: '',
         productSearch: '',
         unit: 'UNIT',
@@ -541,7 +559,7 @@ Format:
     }, 0);
   }, [billItems, currency, exchangeRate]);
 
-  // 🌟 ຕິດຮູບ Base64 ສະເພາະແຖວທຳອິດ ເພື່ອຕັດການແບກຮູບຊ້ຳຊ້ອນ 80%
+  // 🌟 ຕິດຮູບ Base64 ສະເພາະແຖວທຳອິດ (i === 0) ຕັດການແບກຮູບຊ້ຳຊ້ອນ 80%
   const handleSaveBillBatch = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!supplier) {
@@ -551,14 +569,14 @@ Format:
 
     for (let i = 0; i < billItems.length; i++) {
       if (!billItems[i].productId) {
-        alert(`ລາຍການທີ ${i + 1} ຍັງບໍ່ໄດ້ເລືອກສິນຄ້າ.`);
+        alert('ລາຍການທີ ' + (i + 1) + ' ຍັງບໍ່ໄດ້ເລືອກສິນຄ້າ.');
         return;
       }
     }
 
     try {
       setSaveLoading(true);
-      const batchGroupId = `bill_${Date.now()}`;
+      const batchGroupId = 'bill_' + Date.now();
       const finalRate = currency === 'LAK' ? 1 : (Number(exchangeRate) || 1);
 
       for (let i = 0; i < billItems.length; i++) {
@@ -605,11 +623,11 @@ Format:
         });
       }
 
-      alert(`ບັນທຶກເລກບິນ ${generatedBillNo} ສຳເລັດ!`);
+      alert('ບັນທຶກເລກບິນ ' + generatedBillNo + ' ສຳເລັດ! (ຈ່າຍຜ່ານ: ' + paymentMethod + ')');
       setBillImageBase64('');
       setBillRemark('');
       setBillItems([{
-        id: `item-${Date.now()}`,
+        id: 'item-' + Date.now(),
         productId: '',
         productSearch: '',
         unit: 'UNIT',
@@ -622,7 +640,7 @@ Format:
         isDropdownOpen: false
       }]);
     } catch (err: any) {
-      alert(`Error saving to Firestore: ${err.message}`);
+      alert('Error saving to Firestore: ' + err.message);
     } finally {
       setSaveLoading(false);
     }
@@ -653,11 +671,11 @@ Format:
                 {i18n.language === 'la' ? 'ລະບົບຈັດຊື້ & ຜູ້ສະໜອງ (Supplier Procurement)' : 'Supplier Procurement Desk'}
               </h2>
               <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 text-[9px] font-black uppercase flex items-center gap-1">
-                <Zap className="w-2.5 h-2.5" /> Fast Load Active
+                <Zap className="w-2.5 h-2.5" /> High-Speed Month Engine
               </span>
             </div>
             <p className="text-[10px] text-slate-400 font-bold uppercase mt-0.5">
-              {products.length} ສິນຄ້າໃນຄັງ • ສະແດງ {sortedSupplierPrices.length} ບິນ
+              {products.length + ' ສິນຄ້າໃນຄັງ • ສະແດງເດືອນ ' + selectedLedgerMonth + ' (' + sortedSupplierPrices.length + ' ບິນ)'}
             </p>
           </div>
         </div>
@@ -704,7 +722,10 @@ Format:
                 <button
                   type="button"
                   onClick={() => setEntryMode('batch')}
-                  className={`px-3 py-1 text-[10px] font-black uppercase rounded-lg cursor-pointer ${entryMode === 'batch' ? 'bg-[#052659] text-white' : 'text-slate-500'}`}
+                  className={
+                    "px-3 py-1 text-[10px] font-black uppercase rounded-lg cursor-pointer " +
+                    (entryMode === 'batch' ? "bg-[#052659] text-white" : "text-slate-500")
+                  }
                 >
                   ຫຼາຍລາຍການ
                 </button>
@@ -714,7 +735,10 @@ Format:
                     setEntryMode('single');
                     if (billItems.length > 1) setBillItems([billItems[0]]);
                   }}
-                  className={`px-3 py-1 text-[10px] font-black uppercase rounded-lg cursor-pointer ${entryMode === 'single' ? 'bg-[#052659] text-white' : 'text-slate-500'}`}
+                  className={
+                    "px-3 py-1 text-[10px] font-black uppercase rounded-lg cursor-pointer " +
+                    (entryMode === 'single' ? "bg-[#052659] text-white" : "text-slate-500")
+                  }
                 >
                   ລາຍການດ່ຽວ
                 </button>
@@ -728,9 +752,10 @@ Format:
                 onDragOver={e => { e.preventDefault(); setIsDragging(true); }}
                 onDragLeave={() => setIsDragging(false)}
                 onDrop={e => { e.preventDefault(); setIsDragging(false); if (e.dataTransfer.files?.[0]) processImageFile(e.dataTransfer.files[0]); }}
-                className={`p-3.5 rounded-2xl border-2 border-dashed transition-all relative overflow-hidden ${
-                  isDragging ? 'border-emerald-500 bg-emerald-500/10' : 'border-slate-300 dark:border-white/15 bg-slate-50 dark:bg-[#052659]/50'
-                }`}
+                className={
+                  "p-3.5 rounded-2xl border-2 border-dashed transition-all relative overflow-hidden " +
+                  (isDragging ? "border-emerald-500 bg-emerald-500/10" : "border-slate-300 dark:border-white/15 bg-slate-50 dark:bg-[#052659]/50")
+                }
               >
                 {isAiScanning && (
                   <div className="absolute inset-0 z-30 pointer-events-none overflow-hidden">
@@ -855,15 +880,15 @@ Format:
                   </select>
                 </div>
                 <div>
-                  <label className="text-[9.5px] font-black uppercase text-slate-400">Payment</label>
+                  <label className="text-[9.5px] font-black uppercase text-rose-500 dark:text-rose-400">Payment (ຊ່ອງທາງຈ່າຍ)</label>
                   <select 
-                    className="w-full h-10 px-2 rounded-xl bg-slate-50 dark:bg-white/5 border text-xs font-bold cursor-pointer"
+                    className="w-full h-10 px-2 rounded-xl bg-rose-50/50 dark:bg-rose-950/20 border border-rose-500/30 text-xs font-bold text-rose-600 dark:text-rose-400 cursor-pointer"
                     value={paymentMethod}
                     onChange={e => setPaymentMethod(e.target.value as any)}
                   >
-                    <option value="Cash">Cash</option>
-                    <option value="Onepay">OnePay</option>
-                    <option value="LDB">LDB</option>
+                    <option value="Onepay">📱 BCEL OnePay (ໂອນ)</option>
+                    <option value="LDB">🏦 ທະນາຄານ LDB</option>
+                    <option value="Cash">💵 ເງິນສົດ (Cash)</option>
                   </select>
                 </div>
               </div>
@@ -934,9 +959,10 @@ Format:
                         <input 
                           type="text"
                           required
-                          className={`w-full h-10 px-3 pr-8 rounded-xl bg-white dark:bg-[#073069] border text-xs font-bold outline-none cursor-pointer ${
-                            !item.productId && item.productSearch ? 'border-amber-400' : 'border-slate-200 dark:border-white/10 text-slate-800 dark:text-white'
-                          }`}
+                          className={
+                            "w-full h-10 px-3 pr-8 rounded-xl bg-white dark:bg-[#073069] border text-xs font-bold outline-none cursor-pointer " +
+                            (!item.productId && item.productSearch ? "border-amber-400" : "border-slate-200 dark:border-white/10 text-slate-800 dark:text-white")
+                          }
                           placeholder="ຄົ້ນຫາຊື່ສິນຄ້າ..."
                           value={item.isDropdownOpen ? item.productSearch : (selectedProd?.name || item.productSearch)}
                           onFocus={() => updateItemRow(index, { isDropdownOpen: true })}
@@ -1024,7 +1050,6 @@ Format:
                 />
               </div>
 
-              {/* Total & Submit */}
               <div className="p-3.5 bg-[#052659] text-white rounded-2xl flex justify-between items-center">
                 <div>
                   <p className="text-[9px] font-bold uppercase tracking-widest text-[#5483B3]">Total Cost (LAK)</p>
@@ -1037,17 +1062,47 @@ Format:
                 disabled={saveLoading}
                 className="w-full h-12 bg-emerald-500 hover:bg-emerald-600 text-white font-black text-xs uppercase rounded-2xl shadow-lg cursor-pointer transition-all disabled:opacity-50"
               >
-                {saveLoading ? 'SAVING...' : `ບັນທຶກໃບບິນຈັດຊື້ (${generatedBillNo})`}
+                {saveLoading ? 'SAVING...' : 'ບັນທຶກໃບບິນຈັດຊື້ (' + generatedBillNo + ')'}
               </button>
             </form>
           </div>
         </div>
 
-        {/* RIGHT: Active Procurement Ledger (High-Speed Engine + Loading Animation) */}
+        {/* RIGHT: Active Procurement Ledger (On-Demand Month Loading) */}
         <div className="xl:col-span-7 space-y-4">
+          
+          {/* 🌟 3 CARDS ສະຫຼຸບແຍກຊ່ອງທາງຈ່າຍຂອງເດືອນນີ້ */}
+          <div className="grid grid-cols-3 gap-2.5">
+            <div className="p-3.5 rounded-2xl bg-white dark:bg-[#073069] border border-rose-500/20 shadow-xs space-y-0.5">
+              <span className="text-[9px] font-black uppercase text-rose-600 dark:text-rose-400 flex items-center gap-1">
+                <CreditCard className="w-3 h-3" /> BCEL OnePay
+              </span>
+              <p className="text-sm sm:text-base font-black font-mono text-rose-600 dark:text-rose-400">
+                {Math.round(paymentBreakdown.onepayTotal).toLocaleString() + " ₭"}
+              </p>
+            </div>
+
+            <div className="p-3.5 rounded-2xl bg-white dark:bg-[#073069] border border-blue-500/20 shadow-xs space-y-0.5">
+              <span className="text-[9px] font-black uppercase text-blue-600 dark:text-blue-400 flex items-center gap-1">
+                <Building2 className="w-3 h-3" /> ທະນາຄານ LDB
+              </span>
+              <p className="text-sm sm:text-base font-black font-mono text-blue-600 dark:text-blue-400">
+                {Math.round(paymentBreakdown.ldbTotal).toLocaleString() + " ₭"}
+              </p>
+            </div>
+
+            <div className="p-3.5 rounded-2xl bg-white dark:bg-[#073069] border border-emerald-500/20 shadow-xs space-y-0.5">
+              <span className="text-[9px] font-black uppercase text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                <Wallet className="w-3 h-3" /> ເງິນສົດ (Cash)
+              </span>
+              <p className="text-sm sm:text-base font-black font-mono text-emerald-600 dark:text-emerald-400">
+                {Math.round(paymentBreakdown.cashTotal).toLocaleString() + " ₭"}
+              </p>
+            </div>
+          </div>
+
           <div className="bg-white dark:bg-[#073069] rounded-3xl border border-slate-200/80 dark:border-white/10 shadow-xl overflow-hidden">
             
-            {/* ແຖບເລືອກໂໝດ ແລະ ປະຕິທິນ */}
             <div className="p-4 border-b border-slate-100 dark:border-white/5 space-y-3">
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
                 <div>
@@ -1056,18 +1111,20 @@ Format:
                     <span>Active Procurement Ledger</span>
                   </h3>
                   <span className="text-[10px] text-slate-400 font-bold uppercase">
-                    {ledgerMode === 'latest' ? '100 ບິນຫຼ້າສຸດ' : `ເດືອນ ${selectedLedgerMonth}`} • ລວມ: <strong className="text-emerald-600 font-mono text-xs">{Math.round(ledgerTotalLAK).toLocaleString()} ₭</strong>
+                    {'ເດືອນ ' + selectedLedgerMonth + ' • ລວມ: '}
+                    <strong className="text-emerald-600 font-mono text-xs">{Math.round(paymentBreakdown.grandTotal).toLocaleString() + " ₭"}</strong>
                   </span>
                 </div>
 
                 <div className="flex items-center gap-2">
                   <button onClick={() => {
-                    const headers = ['Bill No', 'Date', 'Product', 'Supplier', 'Price LAK', 'Total LAK', 'Qty', 'Unit'];
+                    const headers = ['Bill No', 'Date', 'Product', 'Supplier', 'Paid Via', 'Price LAK', 'Total LAK', 'Qty', 'Unit'];
                     const rows = sortedSupplierPrices.map(p => [
                       p.billNo || '-',
                       toStandardDateString(p.date || p.createdAt),
                       products.find(prod => prod.id === p.productId)?.name || 'Item',
                       p.supplier,
+                      p.paymentMethod || 'Onepay',
                       p.priceLAK || 0,
                       p.totalPriceLAK || 0,
                       p.quantity,
@@ -1075,74 +1132,67 @@ Format:
                     ]);
                     const worksheet = utils.aoa_to_sheet([headers, ...rows]);
                     const workbook = utils.book_new();
-                    utils.book_append_sheet(workbook, worksheet, `Suppliers_${ledgerMode}`);
-                    writeFile(workbook, `Suppliers_${ledgerMode}.xlsx`);
+                    utils.book_append_sheet(workbook, worksheet, "Suppliers");
+                    writeFile(workbook, "Suppliers_" + selectedLedgerMonth + ".xlsx");
                   }} className="px-3 py-1.5 bg-slate-100 dark:bg-white/10 rounded-xl text-xs font-bold uppercase text-blue-500 cursor-pointer">
                     <Download className="w-3 h-3 inline mr-1" /> Excel
                   </button>
                 </div>
               </div>
 
-              {/* 🌟 ປຸ່ມສະຫຼັບໂໝດ: "100 ບິນຫຼ້າສຸດ (ໄວທີ່ສຸດ)" VS "ເລືອກຕາມເດືອນ" */}
-              <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100 dark:border-white/5">
-                <div className="flex bg-slate-100 dark:bg-black/20 p-1 rounded-xl text-[10px] font-black uppercase">
+              {/* 🌟 ປຸ່ມເລືອກເດືອນ ພ້ອມປຸ່ມເລື່ອນ < ແລະ > ດຶງຂໍ້ມູນ On-Demand */}
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100 dark:border-white/10">
+                <div className="flex items-center gap-1.5">
                   <button
-                    onClick={() => setLedgerMode('latest')}
-                    className={`px-3 py-1 rounded-lg cursor-pointer transition-all ${ledgerMode === 'latest' ? 'bg-[#052659] text-white shadow-xs' : 'text-slate-500'}`}
+                    onClick={handlePrevMonth}
+                    className="p-1.5 rounded-lg bg-slate-100 dark:bg-white/10 hover:bg-slate-200 text-slate-600 dark:text-white cursor-pointer"
+                    title="ເດືອນກ່ອນໜ້າ"
                   >
-                    ⚡ 100 ບິນຫຼ້າສຸດ (ໄວທີ່ສຸດ)
+                    <ChevronLeft className="w-3.5 h-3.5" />
                   </button>
+
+                  <div className="flex items-center gap-1.5 px-3 py-1 bg-indigo-50 dark:bg-white/5 border border-indigo-500/20 rounded-xl text-xs font-black text-indigo-600 dark:text-indigo-300">
+                    <Calendar className="w-3.5 h-3.5" />
+                    <span>{LAO_MONTHS[currentDate.getMonth()] + ' ' + currentDate.getFullYear()}</span>
+                  </div>
+
                   <button
-                    onClick={() => setLedgerMode('month')}
-                    className={`px-3 py-1 rounded-lg cursor-pointer transition-all ${ledgerMode === 'month' ? 'bg-[#052659] text-white shadow-xs' : 'text-slate-500'}`}
+                    onClick={handleNextMonth}
+                    className="p-1.5 rounded-lg bg-slate-100 dark:bg-white/10 hover:bg-slate-200 text-slate-600 dark:text-white cursor-pointer"
+                    title="ເດືອນຖັດໄປ"
                   >
-                    📅 ເລືອກຕາມເດືອນ
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </button>
+
+                  {/* ປຸ່ມກັບມາເດືອນປັດຈຸບັນ */}
+                  <button
+                    onClick={() => {
+                      setIsLedgerLoading(true);
+                      setCurrentDate(new Date());
+                    }}
+                    className="px-2.5 py-1 text-[10px] font-black uppercase rounded-lg bg-slate-100 dark:bg-white/10 hover:bg-slate-200 text-slate-600 dark:text-slate-300 ml-1 cursor-pointer"
+                  >
+                    ເດືອນນີ້
                   </button>
                 </div>
 
-                {/* ປະຕິທິນ (ສະແດງສະເພາະຕອນເລືອກໂໝດ 'month') */}
-                {ledgerMode === 'month' && (
-                  <div className="flex items-center gap-1.5">
-                    <button
-                      onClick={handlePrevMonth}
-                      className="p-1.5 rounded-lg bg-slate-100 dark:bg-white/10 hover:bg-slate-200 text-slate-600 dark:text-white cursor-pointer"
-                      title="ເດືອນກ່ອນໜ້າ"
-                    >
-                      <ChevronLeft className="w-3.5 h-3.5" />
-                    </button>
-
-                    <div className="flex items-center gap-1.5 px-3 py-1 bg-indigo-50 dark:bg-white/5 border border-indigo-500/20 rounded-xl text-xs font-black text-indigo-600 dark:text-indigo-300">
-                      <Calendar className="w-3.5 h-3.5" />
-                      <span>ເດືອນ {selectedLedgerMonth}</span>
-                    </div>
-
-                    <button
-                      onClick={handleNextMonth}
-                      className="p-1.5 rounded-lg bg-slate-100 dark:bg-white/10 hover:bg-slate-200 text-slate-600 dark:text-white cursor-pointer"
-                      title="ເດືອນຖັດໄປ"
-                    >
-                      <ChevronRight className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                )}
-
                 <span className="text-[10px] text-slate-400 font-bold uppercase">
-                  ໜ້າ {currentPage} / {totalPages} ({sortedSupplierPrices.length} ລາຍການ)
+                  {'ໜ້າ ' + currentPage + ' / ' + totalPages + ' (' + sortedSupplierPrices.length + ' ລາຍການ)'}
                 </span>
               </div>
             </div>
 
-            {/* 🌟 Table ພ້ອມ Animation Loading */}
+            {/* 🌟 Table ພ້ອມ Animation Loading ສະແດງທຸກຄັ້ງທີ່ກົດປ່ຽນເດືອນ */}
             <div className="overflow-x-auto min-h-[300px] max-h-[500px] relative">
               {isLedgerLoading ? (
-                <div className="absolute inset-0 bg-white/70 dark:bg-[#073069]/70 backdrop-blur-[2px] flex flex-col items-center justify-center gap-3 z-20">
+                <div className="absolute inset-0 bg-white/75 dark:bg-[#073069]/75 backdrop-blur-[2px] flex flex-col items-center justify-center gap-3 z-20">
                   <div className="w-10 h-10 border-4 border-emerald-500/20 border-t-emerald-500 rounded-full animate-spin" />
                   <div className="text-center">
                     <p className="text-xs font-black uppercase text-slate-700 dark:text-white tracking-wider animate-pulse">
                       ກຳລັງດຶງຂໍ້ມູນໃບບິນ... (Loading...)
                     </p>
                     <p className="text-[10px] text-slate-400 font-bold mt-0.5">
-                      {ledgerMode === 'month' ? `ດຶງບິນສະເພາະເດືອນ ${selectedLedgerMonth}` : 'ດຶງ 100 ບິນຫຼ້າສຸດ'}
+                      {'ດາວໂຫຼດສະເພາະເດືອນ ' + selectedLedgerMonth + ' ເພື່ອຄວາມໄວສູງສຸດ'}
                     </p>
                   </div>
                 </div>
@@ -1154,6 +1204,7 @@ Format:
                     <th className="p-3.5">Bill No / Date</th>
                     <th className="p-3.5">Product Name</th>
                     <th className="p-3.5">Supplier</th>
+                    <th className="p-3.5 text-center">Paid Via</th>
                     <th className="p-3.5">Total (LAK)</th>
                     <th className="p-3.5 text-right">Qty</th>
                     <th className="p-3.5 text-center">Action</th>
@@ -1162,50 +1213,68 @@ Format:
                 <tbody className="divide-y divide-slate-100 dark:divide-white/5">
                   {!isLedgerLoading && paginatedSupplierPrices.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="p-12 text-center text-slate-400 text-xs">
-                        {ledgerMode === 'month' 
-                          ? `ບໍ່ພົບບິນຈັດຊື້ໃນເດືອນ ${selectedLedgerMonth} (ລອງກົດປຸ່ມ [◀] ເພື່ອເບິ່ງເດືອນອື່ນ ຫຼື ກົດ '100 ບິນຫຼ້າສຸດ')`
-                          : 'ຍັງບໍ່ມີຂໍ້ມູນໃບບິນຈັດຊື້'
-                        }
+                      <td colSpan={7} className="p-12 text-center text-slate-400 text-xs">
+                        {'ບໍ່ພົບບິນຈັດຊື້ໃນເດືອນ ' + selectedLedgerMonth + ' (ລອງກົດປຸ່ມ [◀] ເພື່ອເບິ່ງເດືອນຜ່ານມາ)'}
                       </td>
                     </tr>
                   ) : (
-                    paginatedSupplierPrices.map(p => (
-                      <tr key={p.id} className="hover:bg-slate-50 dark:hover:bg-white/5 transition-all">
-                        <td className="p-3.5">
-                          <span className="font-mono text-[9px] font-bold text-emerald-500 block">{p.billNo}</span>
-                          <span className="text-[10px] text-slate-400">{toStandardDateString(p.date || p.createdAt)}</span>
-                        </td>
-                        <td className="p-3.5 font-bold text-slate-800 dark:text-white">
-                          {products.find(prod => prod.id === p.productId)?.name || 'Item'}
-                        </td>
-                        <td className="p-3.5 text-slate-400 uppercase">{p.supplier}</td>
-                        <td className="p-3.5 font-mono font-black text-slate-900 dark:text-white">
-                          {Math.round(Number(p.totalPriceLAK || 0)).toLocaleString()} ₭
-                        </td>
-                        <td className="p-3.5 text-right font-mono font-bold">{p.quantity} {p.unit}</td>
-                        <td className="p-3.5 text-center">
-                          <div className="flex items-center justify-center gap-1.5">
-                            {p.billImageUrl && (
-                              <button
-                                onClick={() => setPreviewImageUrl(p.billImageUrl)}
-                                className="p-1.5 hover:bg-slate-200 dark:hover:bg-white/10 rounded-lg text-blue-500 cursor-pointer"
-                                title="View Receipt"
-                              >
-                                <Eye className="w-3.5 h-3.5" />
-                              </button>
+                    paginatedSupplierPrices.map(p => {
+                      const method = String(p.paymentMethod || 'Onepay').toLowerCase();
+
+                      return (
+                        <tr key={p.id} className="hover:bg-slate-50 dark:hover:bg-white/5 transition-all">
+                          <td className="p-3.5">
+                            <span className="font-mono text-[9px] font-bold text-emerald-500 block">{p.billNo}</span>
+                            <span className="text-[10px] text-slate-400">{toStandardDateString(p.date || p.createdAt)}</span>
+                          </td>
+                          <td className="p-3.5 font-bold text-slate-800 dark:text-white">
+                            {products.find(prod => prod.id === p.productId)?.name || 'Item'}
+                          </td>
+                          <td className="p-3.5 text-slate-400 uppercase">{p.supplier}</td>
+                          
+                          <td className="p-3.5 text-center">
+                            {method.includes('onepay') || method.includes('bcel') ? (
+                              <span className="px-2 py-0.5 rounded-full bg-rose-500/10 text-rose-600 dark:text-rose-400 font-bold text-[9px] uppercase">
+                                OnePay
+                              </span>
+                            ) : method.includes('ldb') ? (
+                              <span className="px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 font-bold text-[9px] uppercase">
+                                LDB
+                              </span>
+                            ) : (
+                              <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-bold text-[9px] uppercase">
+                                Cash
+                              </span>
                             )}
-                            <button
-                              onClick={() => handleDeleteEntry(p.id)}
-                              className="p-1.5 hover:bg-red-500/10 rounded-lg text-red-500 cursor-pointer"
-                              title="Delete"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))
+                          </td>
+
+                          <td className="p-3.5 font-mono font-black text-slate-900 dark:text-white">
+                            {Math.round(Number(p.totalPriceLAK || 0)).toLocaleString() + " ₭"}
+                          </td>
+                          <td className="p-3.5 text-right font-mono font-bold">{p.quantity + " " + p.unit}</td>
+                          <td className="p-3.5 text-center">
+                            <div className="flex items-center justify-center gap-1.5">
+                              {p.billImageUrl && (
+                                <button
+                                  onClick={() => setPreviewImageUrl(p.billImageUrl)}
+                                  className="p-1.5 hover:bg-slate-200 dark:hover:bg-white/10 rounded-lg text-blue-500 cursor-pointer"
+                                  title="View Receipt"
+                                >
+                                  <Eye className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                              <button
+                                onClick={() => handleDeleteEntry(p.id)}
+                                className="p-1.5 hover:bg-red-500/10 rounded-lg text-red-500 cursor-pointer"
+                                title="Delete"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
                   )}
                 </tbody>
               </table>
@@ -1222,7 +1291,7 @@ Format:
                   ◀ ກ່ອນໜ້າ
                 </button>
                 <span className="text-[11px] font-bold text-slate-400">
-                  ໜ້າ {currentPage} ຈາກ {totalPages}
+                  {'ໜ້າ ' + currentPage + ' ຈາກ ' + totalPages}
                 </span>
                 <button
                   disabled={currentPage === totalPages}
@@ -1320,7 +1389,7 @@ Format:
               </div>
               <div>
                 <span className="text-[10px] text-slate-400 font-bold uppercase block">ວັນທີ & ເວລາ:</span>
-                <span className="font-mono font-bold">{scannedDate} {scannedTime}</span>
+                <span className="font-mono font-bold">{scannedDate + " " + scannedTime}</span>
               </div>
               <div>
                 <span className="text-[10px] text-slate-400 font-bold uppercase block">ສະກຸນເງິນ:</span>
@@ -1329,14 +1398,10 @@ Format:
               <div className="text-right">
                 <span className="text-[10px] text-slate-400 font-bold uppercase block">ລວມຍອດບິນ:</span>
                 <span className="font-mono font-black text-emerald-600 dark:text-emerald-400 text-sm">
-                  {scannedItems.reduce((acc, it) => acc + it.totalPrice, 0).toLocaleString()} {scannedCurrency}
+                  {scannedItems.reduce((acc, it) => acc + it.totalPrice, 0).toLocaleString() + " " + scannedCurrency}
                 </span>
               </div>
             </div>
-
-            <p className="text-xs text-slate-500 dark:text-slate-300">
-              ກວດສອບການຈັບຄູ່ສິນຄ້າ. <strong>ເມື່ອທ່ານເລືອກຈັບຄູ່ແລ້ວ ລະບົບຈະ Learn ແລະ ຈື່ຈຳໄວ້ສຳລັບໃບບິນຮອບຕໍ່ໆໄປ:</strong>
-            </p>
 
             <div className="flex-1 overflow-y-auto space-y-2.5 pr-1">
               {scannedItems.map((item, idx) => (
@@ -1348,7 +1413,7 @@ Format:
                     type="button"
                     onClick={() => handleRemoveScannedItem(idx)}
                     className="absolute top-2.5 right-2.5 text-red-400 hover:text-red-500 p-1 cursor-pointer"
-                    title="ລຶບລາຍການນີ້ອອກ (ບໍ່ນຳເຂົ້າ)"
+                    title="ລຶບລາຍການນີ້ອອກ"
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>
@@ -1360,23 +1425,27 @@ Format:
 
                   <div className="grid grid-cols-12 gap-2 items-center pt-1 border-t border-slate-100 dark:border-white/5">
                     <div className="col-span-4 text-xs font-mono font-bold text-slate-600 dark:text-slate-300">
-                      {item.quantity} {item.unit} @ {item.pricePerUnit.toLocaleString()} = <span className="text-indigo-600 dark:text-indigo-400 font-black">{item.totalPrice.toLocaleString()} {scannedCurrency}</span>
+                      {item.quantity + " " + item.unit + " @ " + item.pricePerUnit.toLocaleString() + " = "}
+                      <span className="text-indigo-600 dark:text-indigo-400 font-black">
+                        {item.totalPrice.toLocaleString() + " " + scannedCurrency}
+                      </span>
                     </div>
 
                     <div className="col-span-8">
                       <select
                         value={item.matchedProductId}
                         onChange={e => handleUpdateMatchedProduct(idx, e.target.value)}
-                        className={`w-full h-9 px-2 text-xs font-bold rounded-xl border outline-none cursor-pointer ${
-                          item.matchedProductId 
-                            ? 'bg-emerald-50/50 dark:bg-emerald-950/20 border-emerald-500/30 text-emerald-700 dark:text-emerald-300' 
-                            : 'bg-amber-50/50 dark:bg-amber-950/20 border-amber-500/30 text-amber-700 dark:text-amber-300'
-                        }`}
+                        className={
+                          "w-full h-9 px-2 text-xs font-bold rounded-xl border outline-none cursor-pointer " +
+                          (item.matchedProductId 
+                            ? "bg-emerald-50/50 dark:bg-emerald-950/20 border-emerald-500/30 text-emerald-700 dark:text-emerald-300" 
+                            : "bg-amber-50/50 dark:bg-amber-950/20 border-amber-500/30 text-amber-700 dark:text-amber-300")
+                        }
                       >
                         <option value="">-- ເລືອກສິນຄ້າໃນຄັງ (Link to Product) --</option>
                         {products.map(p => (
                           <option key={p.id} value={p.id}>
-                            [{p.sku || 'No-SKU'}] {p.name} ({p.unit})
+                            {'[' + (p.sku || 'No-SKU') + '] ' + p.name + ' (' + (p.unit || 'UNIT') + ')'}
                           </option>
                         ))}
                       </select>
@@ -1393,7 +1462,7 @@ Format:
 
             <div className="pt-3 border-t border-slate-100 dark:border-white/10 flex justify-between items-center">
               <span className="text-xs font-bold text-slate-500">
-                ລວມ {scannedItems.length} ລາຍການ
+                {'ລວມ ' + scannedItems.length + ' ລາຍການ'}
               </span>
               <div className="flex items-center gap-2">
                 <button
