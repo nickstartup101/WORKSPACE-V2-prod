@@ -3,14 +3,38 @@ import { db, handleFirestoreError, OperationType } from '../firebase';
 import { collection, onSnapshot } from 'firebase/firestore';
 import { 
   ArrowUpRight, ArrowDownRight, Percent, 
-  Calendar, Download, Clock, Filter
+  Calendar, Download, Clock, Filter, Sparkles, CreditCard, Wallet, Building2
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { utils, writeFile } from 'xlsx';
 import { useTranslation } from 'react-i18next';
 
+// 🌟 1. ຟັງຊັນແຍກຊ່ອງທາງການເງິນ (OnePay, LDB, Cash) ຈາກຂໍ້ມູນທີ່ຄີແທ້ໆ
+const resolvePaymentChannel = (item: any): 'onepay' | 'ldb' | 'cash' => {
+  if (!item) return 'cash';
+  const combined = (
+    String(item.paymentChannel || '') + ' ' +
+    String(item.paymentMethod || '') + ' ' +
+    String(item.channel || '') + ' ' +
+    String(item.method || '') + ' ' +
+    String(item.remark || '') + ' ' +
+    String(item.description || '') + ' ' +
+    String(item.category || '')
+  ).toLowerCase();
+
+  if (combined.includes('onepay') || combined.includes('one_pay') || combined.includes('bcel')) {
+    return 'onepay';
+  }
+  if (combined.includes('ldb')) {
+    return 'ldb';
+  }
+  return 'cash';
+};
+
+// 🌟 2. ຟັງຊັນແປງວັນທີ (ຮອງຮັບທັງ ປີ 2569 -> 2026, DD/MM/YYYY, Timestamp)
 const extractYearMonthSafe = (raw: any): string => {
   if (!raw) return '';
+
   let d: Date | null = null;
 
   if (raw && typeof raw.toDate === 'function') {
@@ -23,13 +47,14 @@ const extractYearMonthSafe = (raw: any): string => {
 
   if (d && !isNaN(d.getTime())) {
     let y = d.getFullYear();
-    if (y > 2400) y -= 543;
+    if (y > 2400) y -= 543; // ແປງປີ 2569 -> 2026
     const m = String(d.getMonth() + 1).padStart(2, '0');
     return y + '-' + m;
   }
 
   if (typeof raw === 'string') {
     const clean = raw.trim().split('T')[0].split(' ')[0];
+
     if (clean.includes('-')) {
       const parts = clean.split('-');
       if (parts.length >= 2) {
@@ -39,11 +64,13 @@ const extractYearMonthSafe = (raw: any): string => {
         if (!isNaN(y)) return y + '-' + m;
       }
     }
+
     if (clean.includes('/')) {
       const parts = clean.split('/');
       if (parts.length === 3) {
         let y = parseInt(parts[2]);
         if (y > 2400) y -= 543;
+
         const p0 = parseInt(parts[0]);
         const p1 = parseInt(parts[1]);
         const m = (p0 > 12 ? p1 : (p1 > 12 ? p0 : p1)).toString().padStart(2, '0');
@@ -59,11 +86,10 @@ export default function FinanceReport({ selectedBranch }: { selectedBranch?: str
   const { i18n } = useTranslation();
   const currentBranch = selectedBranch || 'branch_1';
 
+  // 🌟 ດຶງສະເພາະ transactions ບ່ອນດຽວ (ເບົາ, ໄວ, ບໍ່ດາວໂຫຼດຮູບໃຫ້ໜັກ!)
   const [transactions, setTransactions] = useState<any[]>([]);
-  const [supplierPrices, setSupplierPrices] = useState<any[]>([]);
-
   const [filterMode, setFilterMode] = useState<'month' | 'all'>('month');
-  const [selectedMonth, setSelectedMonth] = useState<string>('2026-10');
+  const [selectedMonth, setSelectedMonth] = useState<string>('2026-11');
 
   useEffect(() => {
     const unsubT = onSnapshot(collection(db, 'transactions'), snap => {
@@ -71,16 +97,10 @@ export default function FinanceReport({ selectedBranch }: { selectedBranch?: str
       setTransactions(all.filter((tx: any) => (tx.branchId || 'branch_1') === currentBranch));
     }, err => handleFirestoreError(err, OperationType.LIST, 'transactions'));
 
-    const unsubS = onSnapshot(collection(db, 'supplierPrices'), snap => {
-      setSupplierPrices(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-    }, err => handleFirestoreError(err, OperationType.LIST, 'supplierPrices'));
-
-    return () => {
-      unsubT();
-      unsubS();
-    };
+    return () => unsubT();
   }, [currentBranch]);
 
+  // ລາຍຊື່ເດືອນທີ່ມີຂໍ້ມູນຕົວຈິງ
   const availableMonthsList = useMemo(() => {
     const monthCounts: Record<string, number> = {};
     
@@ -103,11 +123,12 @@ export default function FinanceReport({ selectedBranch }: { selectedBranch?: str
     }
   }, [availableMonthsList]);
 
-  // 🌟 ຄິດໄລ່ຕົວເລກການເງິນ (ຫັກບິນ Supplier ອອກຈາກ OnePay, LDB, Cash ຕົວຈິງ 100%)
+  // 🌟 ຄິດໄລ່ຕົວເລກການເງິນທັງໝົດໂດຍກົງຈາກ Transactions (ແຍກ 3 ຊ່ອງທາງຕົງເປະ 100%)
   const reportData = useMemo(() => {
     let totalRevenue = 0;
     let totalCogs = 0;
     let totalOpex = 0;
+    let totalSalary = 0;
     let totalDividends = 0;
 
     let cashRevenue = 0;
@@ -119,27 +140,6 @@ export default function FinanceReport({ selectedBranch }: { selectedBranch?: str
 
     let filteredTxCount = 0;
 
-    // 🌟 1. ດຶງຍອດ COGS ແລະ ຕັດອອກຈາກກະເປົາ OnePay / LDB / Cash ຕາມຊ່ອງທາງຈ່າຍແທ້ໆ!
-    supplierPrices.forEach(sp => {
-      const spMonth = extractYearMonthSafe(sp.date) || extractYearMonthSafe(sp.createdAt);
-      const isMatch = filterMode === 'all' || spMonth === selectedMonth;
-
-      if (isMatch) {
-        const totalVal = sp.totalPriceLAK !== undefined
-          ? Number(sp.totalPriceLAK || 0)
-          : (Number(sp.priceOriginal || 0) * Number(sp.exchangeRate || 1)) * (Number(sp.quantity) || 1);
-        
-        totalCogs += totalVal;
-
-        // ຕັດອອກຈາກຊ່ອງທາງຈ່າຍຕົວຈິງ
-        const method = String(sp.paymentMethod || 'Onepay').toLowerCase();
-        if (method.includes('onepay')) onepayExpense += totalVal;
-        else if (method.includes('ldb')) ldbExpense += totalVal;
-        else cashExpense += totalVal;
-      }
-    });
-
-    // 2. ດຶງຍອດ Transactions
     transactions.forEach(tx => {
       const txMonth = extractYearMonthSafe(tx.date) || extractYearMonthSafe(tx.createdAt);
       const isMatch = filterMode === 'all' || txMonth === selectedMonth;
@@ -149,22 +149,38 @@ export default function FinanceReport({ selectedBranch }: { selectedBranch?: str
         const amt = Number(tx.amount || 0);
         const type = String(tx.type || '').toLowerCase();
         const cat = String(tx.category || '').toLowerCase();
-        const method = String(tx.paymentMethod || 'Cash').toLowerCase();
+        const remark = String(tx.remark || '').toLowerCase();
 
-        const isDividend = type === 'dividend' || cat === 'dividend' || cat === 'dividends' || String(tx.remark || '').includes('ປັນຜົນ');
-        const isReserve = type === 'reserve_transfer' || cat === 'stock_reserve' || String(tx.remark || '').includes('stock');
+        const method = resolvePaymentChannel(tx);
+
+        const isDividend = type === 'dividend' || cat === 'dividend' || cat === 'dividends' || remark.includes('ປັນຜົນ');
+        const isReserve = type === 'reserve_transfer' || cat === 'stock_reserve' || remark.includes('stock');
 
         if (isDividend || isReserve) {
           totalDividends += amt;
         } else if (type === 'income' || cat === 'sales') {
           totalRevenue += amt;
-          if (method.includes('onepay')) onepayRevenue += amt;
-          else if (method.includes('ldb')) ldbRevenue += amt;
+          // 🌟 ແຍກລາຍຮັບເຂົ້າ 3 ກະເປົາ
+          if (method === 'onepay') onepayRevenue += amt;
+          else if (method === 'ldb') ldbRevenue += amt;
           else cashRevenue += amt;
         } else if (type === 'expense') {
-          totalOpex += amt;
-          if (method.includes('onepay')) onepayExpense += amt;
-          else if (method.includes('ldb')) ldbExpense += amt;
+          // ແຍກປະເພດລາຍຈ່າຍ: Purchasing (COGS) vs Salary vs OPEX
+          const isPurchasing = cat.includes('purchas') || cat.includes('ຊື້') || cat.includes('cogs') || remark.includes('ຊື້');
+          const isSalary = cat.includes('salary') || cat.includes('ເງິນເດືອນ');
+
+          if (isPurchasing) {
+            totalCogs += amt;
+          } else if (isSalary) {
+            totalSalary += amt;
+            totalOpex += amt;
+          } else {
+            totalOpex += amt;
+          }
+
+          // 🌟 ຕັດລາຍຈ່າຍອອກຈາກ 3 ກະເປົາ
+          if (method === 'onepay') onepayExpense += amt;
+          else if (method === 'ldb') ldbExpense += amt;
           else cashExpense += amt;
         }
       }
@@ -175,7 +191,7 @@ export default function FinanceReport({ selectedBranch }: { selectedBranch?: str
     const netProfit = grossProfit - totalOpex;
     const roi = (totalCogs + totalOpex) > 0 ? (netProfit / (totalCogs + totalOpex)) * 100 : 0;
 
-    // 🌟 ຍອດເງິນຄົງເຫຼືອທີ່ແທ້ຈິງຕາມກະເປົາ
+    // 🌟 ຍອດເງິນຄົງເຫຼືອແທ້ໆຕາມແຕ່ລະຊ່ອງທາງ (Inflow - Outflow)
     const netCash = cashRevenue - cashExpense;
     const netOnepay = onepayRevenue - onepayExpense;
     const netLdb = ldbRevenue - ldbExpense;
@@ -184,6 +200,7 @@ export default function FinanceReport({ selectedBranch }: { selectedBranch?: str
       totalRevenue,
       totalCogs,
       totalOpex,
+      totalSalary,
       totalDividends,
       grossProfit,
       grossMargin,
@@ -194,22 +211,21 @@ export default function FinanceReport({ selectedBranch }: { selectedBranch?: str
       netLdb,
       filteredTxCount
     };
-  }, [transactions, supplierPrices, selectedMonth, filterMode]);
+  }, [transactions, selectedMonth, filterMode]);
 
   const handleExportExcel = () => {
     const headers = ['Metric', 'Amount (LAK)'];
     const rows = [
       ['Period', filterMode === 'all' ? 'All Time' : selectedMonth],
-      ['Total Revenue', reportData.totalRevenue],
-      ['COGS (Purchasing)', reportData.totalCogs],
-      ['Gross Profit', reportData.grossProfit],
+      ['Total Revenue (ລາຍຮັບ)', reportData.totalRevenue],
+      ['COGS (ຕົ້ນທຶນຈັດຊື້)', reportData.totalCogs],
+      ['Gross Profit (ກຳໄລຂັ້ນຕົ້ນ)', reportData.grossProfit],
       ['Gross Margin %', reportData.grossMargin.toFixed(1) + '%'],
       ['Operating Expenses (OPEX)', reportData.totalOpex],
-      ['Net Profit', reportData.netProfit],
-      ['Dividends Paid', reportData.totalDividends],
-      ['Net Cash', reportData.netCash],
+      ['Net Profit (ກຳໄລສຸດທິ)', reportData.netProfit],
       ['Net BCEL OnePay', reportData.netOnepay],
-      ['Net LDB Bank', reportData.netLdb]
+      ['Net LDB Bank', reportData.netLdb],
+      ['Net Cash (ເງິນສົດ)', reportData.netCash]
     ];
     const ws = utils.aoa_to_sheet([headers, ...rows]);
     const wb = utils.book_new();
@@ -241,7 +257,7 @@ export default function FinanceReport({ selectedBranch }: { selectedBranch?: str
           </div>
         </div>
 
-        {/* ຕົວເລືອກເດືອນ */}
+        {/* ຕົວເລືອກເດືອນ & ປຸ່ມ Export */}
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-white/5 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-white/10 text-xs font-bold">
             <Calendar className="w-4 h-4 text-indigo-500" />
@@ -278,7 +294,7 @@ export default function FinanceReport({ selectedBranch }: { selectedBranch?: str
         </div>
       </div>
 
-      {/* ແຖບປຸ່ມເດືອນທີ່ມີຂໍ້ມູນຕົວຈິງ */}
+      {/* 🌟 ແຖບປຸ່ມເດືອນທີ່ມີຂໍ້ມູນຕົວຈິງ */}
       {availableMonthsList.length > 0 && (
         <div className="p-3 bg-white dark:bg-[#073069] rounded-2xl border border-slate-200/80 dark:border-white/10 flex items-center gap-2 overflow-x-auto">
           <span className="text-[10px] font-black uppercase text-slate-400 flex items-center gap-1 shrink-0">
@@ -305,8 +321,9 @@ export default function FinanceReport({ selectedBranch }: { selectedBranch?: str
         </div>
       )}
 
-      {/* Row 1: 5 KPI Cards */}
+      {/* Row 1: 5 KPI Cards ຫຼັກ */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+        {/* TOTAL REVENUE */}
         <div className="bg-white dark:bg-[#073069] p-5 rounded-3xl border border-slate-200/80 dark:border-white/10 shadow-sm space-y-1">
           <span className="text-[10px] font-black uppercase text-slate-400 flex items-center gap-1">
             <ArrowUpRight className="w-3.5 h-3.5 text-emerald-500" /> TOTAL REVENUE
@@ -317,6 +334,7 @@ export default function FinanceReport({ selectedBranch }: { selectedBranch?: str
           <p className="text-[9.5px] text-slate-400 uppercase font-bold">CUSTOMER INFLOWS</p>
         </div>
 
+        {/* COGS (PURCHASING) */}
         <div className="bg-white dark:bg-[#073069] p-5 rounded-3xl border border-slate-200/80 dark:border-white/10 shadow-sm space-y-1">
           <span className="text-[10px] font-black uppercase text-slate-400 flex items-center gap-1">
             <ArrowDownRight className="w-3.5 h-3.5 text-rose-500" /> COGS (PURCHASING)
@@ -327,6 +345,7 @@ export default function FinanceReport({ selectedBranch }: { selectedBranch?: str
           <p className="text-[9.5px] text-slate-400 uppercase font-bold">MATERIAL COSTS</p>
         </div>
 
+        {/* % GROSS MARGIN */}
         <div className="bg-white dark:bg-[#073069] p-5 rounded-3xl border border-slate-200/80 dark:border-white/10 shadow-sm space-y-1">
           <span className="text-[10px] font-black uppercase text-blue-500 flex items-center gap-1">
             <Percent className="w-3.5 h-3.5" /> % GROSS MARGIN
@@ -337,6 +356,7 @@ export default function FinanceReport({ selectedBranch }: { selectedBranch?: str
           <p className="text-[9.5px] text-slate-400 font-mono">{"GP: " + Math.round(reportData.grossProfit).toLocaleString() + " ₭"}</p>
         </div>
 
+        {/* NET PROFIT */}
         <div className={
           "p-5 rounded-3xl border shadow-sm space-y-1 " +
           (reportData.netProfit >= 0 
@@ -360,6 +380,7 @@ export default function FinanceReport({ selectedBranch }: { selectedBranch?: str
           </p>
         </div>
 
+        {/* ESTIMATED ROI */}
         <div className="bg-amber-50/50 dark:bg-white/5 p-5 rounded-3xl border border-amber-500/20 shadow-sm space-y-1 col-span-2 lg:col-span-1">
           <span className="text-[10px] font-black uppercase text-amber-600 dark:text-amber-400">
             ESTIMATED ROI
@@ -371,39 +392,48 @@ export default function FinanceReport({ selectedBranch }: { selectedBranch?: str
         </div>
       </div>
 
-      {/* 🌟 Row 2: ຍອດເງິນຕາມຊ່ອງທາງ (OnePay ຖືກຕັດຕາມບິນຊື້ເຄື່ອງຕົວຈິງແລ້ວ!) */}
+      {/* 🌟 Row 2: ຍອດເງິນແຍກຕາມ 3 ຊ່ອງທາງ (BCEL OnePay, LDB, Cash) ຖືກຕ້ອງ 100%! */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {/* BCEL ONEPAY */}
         <div className="bg-white dark:bg-[#073069] p-5 rounded-3xl border border-rose-500/20 shadow-sm space-y-1">
           <div className="flex justify-between items-center">
-            <span className="text-[10px] font-black uppercase text-rose-600 dark:text-rose-400">BCEL ONEPAY (ໂອນ)</span>
+            <span className="text-[10px] font-black uppercase text-rose-600 dark:text-rose-400 flex items-center gap-1.5">
+              <CreditCard className="w-3.5 h-3.5" /> BCEL ONEPAY (ໂອນ)
+            </span>
             <span className="px-2 py-0.5 rounded-full bg-rose-500/10 text-rose-600 text-[9px] font-black uppercase">OnePay</span>
           </div>
-          <p className="text-2xl font-black font-mono text-slate-800 dark:text-white">
+          <p className="text-2xl font-black font-mono text-rose-600 dark:text-rose-400">
             {Math.round(reportData.netOnepay).toLocaleString() + " ₭"}
           </p>
+          <p className="text-[9.5px] text-slate-400">ຍອດເງິນໂອນ OnePay ຕົວຈິງ</p>
         </div>
 
         {/* ທະນາຄານ LDB */}
         <div className="bg-white dark:bg-[#073069] p-5 rounded-3xl border border-blue-500/20 shadow-sm space-y-1">
           <div className="flex justify-between items-center">
-            <span className="text-[10px] font-black uppercase text-blue-600 dark:text-blue-400">ທະນາຄານ LDB</span>
+            <span className="text-[10px] font-black uppercase text-blue-600 dark:text-blue-400 flex items-center gap-1.5">
+              <Building2 className="w-3.5 h-3.5" /> ທະນາຄານ LDB
+            </span>
             <span className="px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-600 text-[9px] font-black uppercase">LDB</span>
           </div>
-          <p className="text-2xl font-black font-mono text-slate-800 dark:text-white">
+          <p className="text-2xl font-black font-mono text-blue-600 dark:text-blue-400">
             {Math.round(reportData.netLdb).toLocaleString() + " ₭"}
           </p>
+          <p className="text-[9.5px] text-slate-400">ຍອດເງິນໂອນ LDB ຕົວຈິງ</p>
         </div>
 
         {/* ເງິນສົດ (CASH) */}
         <div className="bg-white dark:bg-[#073069] p-5 rounded-3xl border border-emerald-500/20 shadow-sm space-y-1">
           <div className="flex justify-between items-center">
-            <span className="text-[10px] font-black uppercase text-emerald-600 dark:text-emerald-400">ເງິນສົດ (CASH)</span>
+            <span className="text-[10px] font-black uppercase text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
+              <Wallet className="w-3.5 h-3.5" /> ເງິນສົດ (CASH)
+            </span>
             <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 text-[9px] font-black uppercase">Cash</span>
           </div>
-          <p className="text-2xl font-black font-mono text-slate-800 dark:text-white">
+          <p className="text-2xl font-black font-mono text-emerald-600 dark:text-emerald-400">
             {Math.round(reportData.netCash).toLocaleString() + " ₭"}
           </p>
+          <p className="text-[9.5px] text-slate-400">ຍອດເງິນສົດໃນລິ້ນຊັກຕົວຈິງ</p>
         </div>
       </div>
 
