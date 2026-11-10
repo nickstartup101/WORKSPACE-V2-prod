@@ -253,7 +253,7 @@ export default function App() {
     );
   }
 
-  // ✅ ລາຍການເມນູ Sidebar (ຕັດ "ແຜນຈັດຊື້ & ບິນ" ອອກແລ້ວ):
+  // ✅ ລາຍການເມນູ Sidebar (ບໍ່ມີ Auto-Bill Planner ແລ້ວ):
   const navItems = [
     { id: 'dashboard', icon: LayoutDashboard, label: t('dashboard') },
     { id: 'report', icon: PieChart, label: i18n.language === 'la' ? 'ບົດລາຍງານການເງິນ' : 'Finance Report' },
