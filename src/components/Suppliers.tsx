@@ -886,9 +886,9 @@ Format:
                     value={paymentMethod}
                     onChange={e => setPaymentMethod(e.target.value as any)}
                   >
-                    <option value="Onepay">📱 BCEL OnePay (ໂອນ)</option>
-                    <option value="LDB">🏦 ທະນາຄານ LDB</option>
-                    <option value="Cash">💵 ເງິນສົດ (Cash)</option>
+                    <option value="Onepay"> BCEL OnePay (ໂອນ)</option>
+                    <option value="LDB"> ທະນາຄານ LDB</option>
+                    <option value="Cash"> ເງິນສົດ (Cash)</option>
                   </select>
                 </div>
               </div>
