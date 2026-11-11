@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
+// Import Components ຫຼັກ
 import Dashboard from './components/Dashboard';
 import FinanceReport from './components/FinanceReport';
 import DebtLedger from './components/DebtLedger';
@@ -35,16 +36,18 @@ export default function App() {
   const [userRole, setUserRole] = useState<'admin' | 'manager' | 'staff'>('admin');
   const [activeTab, setActiveTab] = useState<TabType>('dashboard');
   
-  // Multi-Branch State (ດຶງສົດຈາກ Firestore settings/branch_list)
+  // 1. Multi-Branch State (ດຶງສົດຈາກ Firestore settings/branch_list)
   const [branches, setBranches] = useState<any[]>([
     { id: 'branch_1', name: 'ສາຂາ 1 (ດອນໜູນ)' },
     { id: 'branch_2', name: 'ສາຂາ 2 (ໂພນຕ້ອງ)' }
   ]);
   const [selectedBranch, setSelectedBranch] = useState<string>('branch_1');
+
+  // UI States
   const [isDarkMode, setIsDarkMode] = useState<boolean>(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
 
-  // 1. ດຶງລາຍຊື່ສາຂາຈາກ Firestore
+  // 2. ດຶງລາຍຊື່ສາຂາອັດຕະໂນມັດຈາກ Firestore
   useEffect(() => {
     const unsubBranch = onSnapshot(doc(db, 'settings', 'branch_list'), (snap) => {
       if (snap.exists() && Array.isArray(snap.data()?.branches)) {
@@ -54,7 +57,7 @@ export default function App() {
     return () => unsubBranch();
   }, []);
 
-  // 2. ກວດສອບສິດຜູ້ໃຊ້ (RBAC)
+  // 3. ກວດສອບສິດຜູ້ໃຊ້ (RBAC) ຈາກ Auth & user_permissions
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       setCurrentUser(user);
@@ -65,18 +68,24 @@ export default function App() {
             const matched = permSnap.data().users.find((u: any) => u.email === user.email.toLowerCase());
             if (matched) {
               setUserRole(matched.role);
+              // ຖ້າເປັນພະນັກງານຄີຂໍ້ມູນ (Staff) ໃຫ້ເຂົ້າໜ້າ Financials ທັນທີ
               if (matched.role === 'staff') {
                 setActiveTab('financials');
               }
               return;
             }
           }
-        } catch (err) {}
+        } catch (err) {
+          console.error("Permission check error:", err);
+        }
       }
       setUserRole('admin');
     });
     return () => unsubscribe();
   }, []);
+
+  // 4. ດຶງລະຫັດ PIN ແບບ Dynamic ຈາກ Settings (ປ່ຽນປຸບ ອັບເດດປັບ)
+  const dynamicApprovalPin = localStorage.getItem('approval_pin') || localStorage.getItem('admin_master_pin') || '1234';
 
   const handleLogout = async () => {
     if (window.confirm('ທ່ານຕ້ອງການອອກຈາກລະບົບແທ້ບໍ່?')) {
@@ -88,6 +97,7 @@ export default function App() {
     }
   };
 
+  // 5. ລະບົບປ່ຽນພາສາ LA / EN
   const currentLang = (i18n.language && i18n.language.startsWith('en')) ? 'en' : 'la';
   const toggleLanguage = () => {
     const nextLang = currentLang === 'la' ? 'en' : 'la';
@@ -95,20 +105,21 @@ export default function App() {
     localStorage.setItem('i18nextLng', nextLang);
   };
 
+  // 6. ລາຍການເມນູ ພ້ອມກຳນົດສິດ (Role Filter)
   const allNavItems = [
     {
       id: 'dashboard' as TabType,
       labelLao: 'ແດຊບອດ (Overview)',
       labelEng: 'Dashboard',
       icon: LayoutDashboard,
-      roles: ['admin', 'manager'],
+      roles: ['admin', 'manager'], // Staff ຖືກເຊື່ອງ
     },
     {
       id: 'reports' as TabType,
       labelLao: 'ບົດລາຍງານການເງິນ',
       labelEng: 'Financial Reports',
       icon: BarChart3,
-      roles: ['admin'],
+      roles: ['admin'], // ສະເພາະ Admin ເທົ່ານັ້ນ
     },
     {
       id: 'debts' as TabType,
@@ -136,22 +147,24 @@ export default function App() {
       labelLao: 'ຕັ້ງຄ່າລະບົບ',
       labelEng: 'Settings',
       icon: SettingsIcon,
-      roles: ['admin'],
+      roles: ['admin'], // ສະເພາະ Admin ເທົ່ານັ້ນ
     },
   ];
 
+  // ກັ່ນຕອງສະເພາະເມນູທີ່ Role ນັ້ນໆໄດ້ຮັບອະນຸຍາດ
   const allowedNavItems = allNavItems.filter(item => item.roles.includes(userRole));
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-slate-100/90 text-slate-800 font-sans">
       
-      {/* SIDEBAR (w-[235px]) */}
+      {/* ===================== SIDEBAR (Deep Navy #001839 / w-[235px]) ===================== */}
       <aside className={`
         fixed inset-y-0 left-0 z-40 w-[235px] bg-[#001839] text-white flex flex-col justify-between border-r border-white/10 transition-transform duration-300 ease-in-out shrink-0
         lg:static lg:translate-x-0 ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}
       `}>
         
         <div>
+          {/* Brand Header */}
           <div className="p-4 border-b border-white/10 flex items-center justify-between">
             <div>
               <div className="flex items-center gap-1.5">
@@ -173,6 +186,7 @@ export default function App() {
             </button>
           </div>
 
+          {/* Navigation Menu Items */}
           <nav className="p-2.5 space-y-1 overflow-y-auto max-h-[calc(100vh-210px)]">
             {allowedNavItems.map((item) => {
               const Icon = item.icon;
@@ -208,7 +222,7 @@ export default function App() {
           </nav>
         </div>
 
-        {/* User Footer */}
+        {/* User Profile & Role Indicator (Bottom Sidebar) */}
         <div className="p-3 border-t border-white/10 bg-[#00132e]/60 space-y-2.5">
           <div className="flex items-center gap-2.5 px-1.5">
             <div className="w-8 h-8 rounded-xl bg-orange-500 text-white font-serif text-sm font-bold flex items-center justify-center shrink-0 border border-orange-400/30">
@@ -238,10 +252,10 @@ export default function App() {
 
       </aside>
 
-      {/* WORKSPACE AREA */}
+      {/* ===================== WORKSPACE CONTENT AREA ===================== */}
       <div className="flex-1 flex flex-col h-screen overflow-hidden">
         
-        {/* Top Header */}
+        {/* Top Header Bar */}
         <header className="h-14 bg-white border-b border-slate-200/80 px-4 sm:px-6 flex items-center justify-between shrink-0 z-30">
           <div className="flex items-center gap-3">
             <button
@@ -267,10 +281,12 @@ export default function App() {
             </div>
           </div>
 
+          {/* Quick Actions (Language, Theme) */}
           <div className="flex items-center gap-2">
             <button
               onClick={toggleLanguage}
-              className="px-3 py-1 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-xs font-serif uppercase tracking-wider text-[#001839] flex items-center gap-1.5 cursor-pointer"
+              className="px-3 py-1 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-xs font-serif uppercase tracking-wider text-[#001839] flex items-center gap-1.5 cursor-pointer transition shadow-xs"
+              title="Switch Language"
             >
               <Globe strokeWidth={1.4} className="w-3.5 h-3.5" />
               <span>{currentLang === 'la' ? 'LA' : 'EN'}</span>
@@ -278,7 +294,8 @@ export default function App() {
 
             <button
               onClick={() => setIsDarkMode(!isDarkMode)}
-              className="p-1.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-[#001839] cursor-pointer"
+              className="p-1.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-[#001839] cursor-pointer transition"
+              title="Toggle Theme"
             >
               {isDarkMode ? (
                 <Sun strokeWidth={1.4} className="w-4 h-4 text-amber-500" />
@@ -289,20 +306,38 @@ export default function App() {
           </div>
         </header>
 
-        // 1. ດຶງລະຫັດ PIN ຕົວຈິງຈາກ Settings (ຖ້າບໍ່ມີຈຶ່ງໃຊ້ '1234')
-        const dynamicApprovalPin = localStorage.getItem('approval_pin') || localStorage.getItem('admin_master_pin') || '1234';
-
-        // 2. ສ່ວນ render ໃນ <main> ຂອງ App.tsx:
+        {/* Dynamic Screen View (ສົ່ງ selectedBranch ແລະ dynamicApprovalPin) */}
         <main className="flex-1 overflow-y-auto">
-  {activeTab === 'dashboard' && <Dashboard selectedBranch={selectedBranch} />}
-  {activeTab === 'reports' && <FinanceReport selectedBranch={selectedBranch} />}
-  {activeTab === 'debts' && <DebtLedger />}
-  {activeTab === 'suppliers' && <Suppliers />}
-  {activeTab === 'financials' && (
-    <Financials 
-      appConfig={{ masterApprovalPin: dynamicApprovalPin }} 
-      selectedBranch={selectedBranch} 
-    />
-  )}
-  {activeTab === 'settings' && <Settings />}
-</main>
+          {activeTab === 'dashboard' && (
+            <Dashboard selectedBranch={selectedBranch} />
+          )}
+
+          {activeTab === 'reports' && (
+            <FinanceReport selectedBranch={selectedBranch} />
+          )}
+
+          {activeTab === 'debts' && (
+            <DebtLedger />
+          )}
+
+          {activeTab === 'suppliers' && (
+            <Suppliers />
+          )}
+
+          {activeTab === 'financials' && (
+            <Financials 
+              appConfig={{ masterApprovalPin: dynamicApprovalPin }} 
+              selectedBranch={selectedBranch} 
+            />
+          )}
+
+          {activeTab === 'settings' && (
+            <Settings />
+          )}
+        </main>
+
+      </div>
+
+    </div>
+  );
+}
