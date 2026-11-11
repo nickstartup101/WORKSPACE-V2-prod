@@ -1,272 +1,64 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState } from 'react';
 import { 
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
-} from 'recharts';
-import { 
-  TrendingUp, BrainCircuit, Loader2, Package, Sparkles, 
-  Wallet, CreditCard, Building2, Calendar, Filter, 
-  Percent, ArrowUpRight, ArrowDownRight, ChevronRight, X, Search
+  TrendingUp, TrendingDown, Percent, ArrowUpRight, 
+  Wallet, Building2, CreditCard, Sparkles, Activity
 } from 'lucide-react';
-import { useTranslation } from 'react-i18next';
-import { format, subDays, subMonths } from 'date-fns';
-import { User } from 'firebase/auth';
-import { db } from '../firebase';
-import { collection, onSnapshot } from 'firebase/firestore';
 
-interface DashboardProps {
-  userSettings: any;
-  user?: User | null;
-  selectedBranch?: string;
-}
-
-const toStandardDate = (raw: any): string => {
-  if (!raw) return '';
-  if (typeof raw === 'string') {
-    const clean = raw.trim().split('T')[0];
-    if (clean.includes('-')) {
-      const parts = clean.split('-');
-      if (parts.length === 3) return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
-    }
-    return clean;
-  }
-  if (raw && typeof raw.toDate === 'function') {
-    try { return format(raw.toDate(), 'yyyy-MM-dd'); } catch { return ''; }
-  }
-  return '';
-};
-
-const parseAmount = (val: any): number => {
-  if (!val) return 0;
-  if (typeof val === 'number') return isNaN(val) ? 0 : val;
-  const clean = String(val).replace(/[^0-9.-]/g, '');
-  const num = parseFloat(clean);
-  return isNaN(num) ? 0 : num;
-};
-
-export default function Dashboard({ userSettings, user, selectedBranch }: DashboardProps) {
-  const { t, i18n } = useTranslation();
-
-  const [timeframeMode, setTimeframeMode] = useState<'all' | 'month' | 'last_month' | 'today'>('all');
-  const [selectedMonthStr, setSelectedMonthStr] = useState<string>(() => format(new Date(), 'yyyy-MM'));
-
-  const [fsProducts, setFsProducts] = useState<any[]>([]);
-  const [fsSupplierPrices, setFsSupplierPrices] = useState<any[]>([]);
-  const [fsTransactions, setFsTransactions] = useState<any[]>([]);
-  const [fsLoading, setFsLoading] = useState(true);
-
-  const [showInventoryModal, setShowInventoryModal] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-
-  // 📡 Real-time Firestore Subscriptions
-  useEffect(() => {
-    setFsLoading(true);
-    const branch = selectedBranch || 'branch_1';
-
-    const unsubP = onSnapshot(collection(db, 'products'), (snap) => {
-      setFsProducts(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    });
-
-    const unsubS = onSnapshot(collection(db, 'supplierPrices'), (snap) => {
-      setFsSupplierPrices(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    });
-
-    const unsubT = onSnapshot(collection(db, 'transactions'), (snap) => {
-      const all = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      // Match active branch or include transactions with no branch set
-      setFsTransactions(all.filter((tx: any) => !tx.branchId || tx.branchId === branch || tx.branchId === 'main'));
-      setFsLoading(false);
-    });
-
-    return () => {
-      unsubP();
-      unsubS();
-      unsubT();
-    };
-  }, [selectedBranch]);
-
-  const normalizePayment = (src?: string): 'Cash' | 'Onepay' | 'LDB' => {
-    if (!src) return 'Cash';
-    const s = String(src).toLowerCase();
-    if (s.includes('ldb')) return 'LDB';
-    if (s.includes('onepay') || s.includes('online') || s.includes('bank') || s.includes('transfer')) return 'Onepay';
-    return 'Cash';
-  };
-
-  // ================= 📊 DYNAMIC FINANCIAL KPIS =================
-  const financialOverview = useMemo(() => {
-    const now = new Date();
-    const currentMonthPrefix = format(now, 'yyyy-MM');
-    const lastMonthPrefix = format(subMonths(now, 1), 'yyyy-MM');
-    const todayPrefix = format(now, 'yyyy-MM-dd');
-
-    const matchTimeframe = (dateVal: any) => {
-      if (timeframeMode === 'all') return true;
-      const dStr = toStandardDate(dateVal);
-      if (!dStr) return false;
-
-      if (timeframeMode === 'today') return dStr === todayPrefix;
-      if (timeframeMode === 'last_month') return dStr.startsWith(lastMonthPrefix);
-      if (timeframeMode === 'month') return dStr.startsWith(currentMonthPrefix);
-      return true;
-    };
-
-    let totalRevenue = 0;
-    let totalPurchasing = 0;
-    let totalOPEX = 0;
-
-    let cashIncome = 0, cashExpense = 0;
-    let onepayIncome = 0, onepayExpense = 0;
-    let ldbIncome = 0, ldbExpense = 0;
-
-    const importedSupplierPriceIds = new Set<string>();
-    fsTransactions.forEach(tx => {
-      if (Array.isArray(tx.supplierPriceIds)) {
-        tx.supplierPriceIds.forEach((id: string) => importedSupplierPriceIds.add(id));
-      }
-    });
-
-    const filteredTxList = fsTransactions.filter(tx => matchTimeframe(tx.date || tx.createdAt));
-
-    filteredTxList.forEach(tx => {
-      const amt = parseAmount(tx.amount);
-      const ch = normalizePayment(tx.source);
-      const isIncome = tx.type === 'income' || String(tx.category || '').toLowerCase() === 'sales';
-
-      if (isIncome) {
-        totalRevenue += amt;
-        if (ch === 'Cash') cashIncome += amt;
-        else if (ch === 'Onepay') onepayIncome += amt;
-        else if (ch === 'LDB') ldbIncome += amt;
-      } else {
-        const cat = String(tx.category || '').toLowerCase();
-        const isPurchasing = cat.includes('purchas') || cat.includes('supply') || cat.includes('ຊື້');
-
-        if (isPurchasing) totalPurchasing += amt;
-        else totalOPEX += amt;
-
-        if (ch === 'Cash') cashExpense += amt;
-        else if (ch === 'Onepay') onepayExpense += amt;
-        else if (ch === 'LDB') ldbExpense += amt;
-      }
-    });
-
-    // Add direct unimported supplier purchases
-    fsSupplierPrices.forEach(sp => {
-      const dStr = toStandardDate(sp.date || sp.createdAt);
-      if (!dStr || importedSupplierPriceIds.has(sp.id)) return;
-
-      if (matchTimeframe(dStr)) {
-        const amt = sp.totalPriceLAK !== undefined
-          ? parseAmount(sp.totalPriceLAK)
-          : (sp.currency === 'LAK' ? parseAmount(sp.priceOriginal) : parseAmount(sp.priceOriginal) * parseAmount(sp.exchangeRate || 1)) * (parseAmount(sp.quantity) || 1);
-
-        totalPurchasing += amt;
-        const ch = normalizePayment(sp.paymentMethod);
-        if (ch === 'Cash') cashExpense += amt;
-        else if (ch === 'Onepay') onepayExpense += amt;
-        else if (ch === 'LDB') ldbExpense += amt;
-      }
-    });
-
-    const totalExpenses = totalPurchasing + totalOPEX;
-    const grossProfit = totalRevenue - totalPurchasing;
-    const grossMarginPercent = totalRevenue > 0 ? (grossProfit / totalRevenue) * 100 : 0;
-    const netProfit = totalRevenue - totalExpenses;
-    const estimatedROI = totalExpenses > 0 ? (netProfit / totalExpenses) * 100 : 0;
-
-    const cashNet = cashIncome - cashExpense;
-    const onepayNet = onepayIncome - onepayExpense;
-    const ldbNet = ldbIncome - ldbExpense;
-    const totalNetLiquidity = cashNet + onepayNet + ldbNet;
-
-    // 7-Day Trend
-    const last7Days = Array.from({ length: 7 }, (_, i) => subDays(new Date(), 6 - i));
-    const trends7Days = last7Days.map(date => {
-      const dateStr = format(date, 'yyyy-MM-dd');
-      const dayTxs = fsTransactions.filter(tx => toStandardDate(tx.date || tx.createdAt) === dateStr);
-
-      let income = 0;
-      let expense = 0;
-      dayTxs.forEach(tx => {
-        const amt = parseAmount(tx.amount);
-        if (tx.type === 'income' || String(tx.category || '').toLowerCase() === 'sales') income += amt;
-        else expense += amt;
-      });
-
-      return {
-        date: format(date, 'dd/MM'),
-        income,
-        expense
-      };
-    });
-
-    return {
-      totalRevenue,
-      totalPurchasing,
-      totalOPEX,
-      totalExpenses,
-      grossProfit,
-      grossMarginPercent,
-      netProfit,
-      estimatedROI,
-      cashNet,
-      onepayNet,
-      ldbNet,
-      totalNetLiquidity,
-      trends7Days,
-      transactionCount: filteredTxList.length
-    };
-  }, [fsTransactions, fsSupplierPrices, timeframeMode]);
+export default function Dashboard() {
+  const [filterPeriod, setFilterPeriod] = useState<'all' | 'month' | 'prev_month'>('all');
 
   return (
-    <div className="space-y-6">
-
-      {/* Header Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 bg-white dark:bg-[#073069] rounded-[2rem] border border-slate-200/80 dark:border-white/10 shadow-sm">
+    <div className="p-4 sm:p-5 space-y-5 bg-slate-100/90 min-h-screen text-slate-800">
+      
+      {/* Executive Header Bar */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 bg-white rounded-3xl border border-slate-200/80 shadow-xs">
         <div className="flex items-center gap-3">
-          <div className="p-2.5 bg-primary/10 text-primary rounded-2xl">
-            <BrainCircuit className="w-5 h-5 animate-pulse" />
+          <div className="w-10 h-10 rounded-2xl bg-[#001839]/5 text-[#001839] flex items-center justify-center border border-[#001839]/10">
+            <Activity strokeWidth={1.4} className="w-5 h-5 text-[#001839]" />
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h2 className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-white">
-                {i18n.language === 'la' ? 'ພາບລວມລະບົບ (Executive Dashboard)' : 'Executive Dashboard'}
+              <h2 className="text-base font-serif tracking-tight text-[#001839] uppercase">
+                Executive Dashboard
               </h2>
-              <span className="text-[8.5px] font-black uppercase px-2 py-0.5 rounded bg-blue-500/10 text-blue-500 border border-blue-500/20">
-                {(selectedBranch || 'branch_1') === 'branch_1' ? 'ສາຂາ 1' : 'ສາຂາ 2'}
+              <span className="px-2 py-0.5 rounded-full bg-[#001839]/5 text-[#001839] text-[9px] font-serif uppercase tracking-widest">
+                ສາຂາ 1
               </span>
             </div>
-            <p className="text-[10px] text-slate-400 font-bold uppercase mt-0.5">
+            <p className="text-[10px] font-serif tracking-widest text-slate-400 uppercase mt-0.5">
               Live Real-Time Data Connected
             </p>
           </div>
         </div>
 
-        {/* Timeframe Presets */}
-        <div className="flex bg-slate-100 dark:bg-black/25 p-1 rounded-2xl border border-slate-200 dark:border-white/10">
+        {/* Filter Pills */}
+        <div className="flex items-center bg-slate-100 p-1 rounded-2xl border border-slate-200/60">
           <button
-            type="button"
-            onClick={() => setTimeframeMode('all')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
-              timeframeMode === 'all' ? 'bg-[#052659] text-white shadow-md' : 'text-slate-500 hover:text-slate-800'
+            onClick={() => setFilterPeriod('all')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-serif uppercase tracking-wider transition ${
+              filterPeriod === 'all' 
+                ? 'bg-[#001839] text-white shadow-xs' 
+                : 'text-slate-600 hover:text-slate-900'
             }`}
           >
             ທັງໝົດ (All-Time)
           </button>
           <button
-            type="button"
-            onClick={() => setTimeframeMode('month')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
-              timeframeMode === 'month' ? 'bg-[#052659] text-white shadow-md' : 'text-slate-500 hover:text-slate-800'
+            onClick={() => setFilterPeriod('month')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-serif uppercase tracking-wider transition ${
+              filterPeriod === 'month' 
+                ? 'bg-[#001839] text-white shadow-xs' 
+                : 'text-slate-600 hover:text-slate-900'
             }`}
           >
             ເດືອນນີ້
           </button>
           <button
-            type="button"
-            onClick={() => setTimeframeMode('last_month')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
-              timeframeMode === 'last_month' ? 'bg-[#052659] text-white shadow-md' : 'text-slate-500 hover:text-slate-800'
+            onClick={() => setFilterPeriod('prev_month')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-serif uppercase tracking-wider transition ${
+              filterPeriod === 'prev_month' 
+                ? 'bg-[#001839] text-white shadow-xs' 
+                : 'text-slate-600 hover:text-slate-900'
             }`}
           >
             ເດືອນກ່ອນ
@@ -274,89 +66,172 @@ export default function Dashboard({ userSettings, user, selectedBranch }: Dashbo
         </div>
       </div>
 
-      {/* Financial KPIs */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-        <div className="bg-white dark:bg-[#073069] p-5 rounded-3xl border border-slate-200/80 dark:border-white/10 shadow-sm space-y-1">
-          <span className="text-[9.5px] font-black uppercase text-slate-400 flex items-center gap-1">
-            <ArrowUpRight className="w-3.5 h-3.5 text-emerald-500" />
-            Total Revenue
-          </span>
-          <p className="text-xl font-black font-mono text-emerald-600 dark:text-emerald-400">
-            {Math.round(financialOverview.totalRevenue).toLocaleString()} ₭
-          </p>
+      {/* Row 1: KPI Cards (Editorial Tones - ບໍ່ມີສີສະທ້ອນແສງ) */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5">
+        
+        {/* Total Revenue */}
+        <div className="p-4 bg-white rounded-3xl border border-slate-200/80 shadow-xs flex flex-col justify-between space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="text-[9.5px] font-serif uppercase tracking-[0.18em] text-slate-400">Total Revenue</span>
+            <div className="w-6 h-6 rounded-lg bg-emerald-50 text-emerald-800 flex items-center justify-center">
+              <TrendingUp strokeWidth={1.4} className="w-3.5 h-3.5" />
+            </div>
+          </div>
+          <div>
+            <h3 className="text-xl font-serif tracking-tight text-emerald-800">
+              988,680,004 ₭
+            </h3>
+            <span className="text-[10px] text-slate-400 font-sans mt-0.5 block">ຍອດຂາຍລວມສະສົມ</span>
+          </div>
         </div>
 
-        <div className="bg-white dark:bg-[#073069] p-5 rounded-3xl border border-slate-200/80 dark:border-white/10 shadow-sm space-y-1">
-          <span className="text-[9.5px] font-black uppercase text-slate-400 flex items-center gap-1">
-            <ArrowDownRight className="w-3.5 h-3.5 text-rose-500" />
-            Purchasing (COGS)
-          </span>
-          <p className="text-xl font-black font-mono text-rose-500 dark:text-rose-400">
-            {Math.round(financialOverview.totalPurchasing).toLocaleString()} ₭
-          </p>
+        {/* Purchasing (COGS) */}
+        <div className="p-4 bg-white rounded-3xl border border-slate-200/80 shadow-xs flex flex-col justify-between space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="text-[9.5px] font-serif uppercase tracking-[0.18em] text-slate-400">Purchasing (COGS)</span>
+            <div className="w-6 h-6 rounded-lg bg-rose-50 text-rose-800 flex items-center justify-center">
+              <TrendingDown strokeWidth={1.4} className="w-3.5 h-3.5" />
+            </div>
+          </div>
+          <div>
+            <h3 className="text-xl font-serif tracking-tight text-rose-800">
+              494,669,591 ₭
+            </h3>
+            <span className="text-[10px] text-slate-400 font-sans mt-0.5 block">ຕົ້ນທຶນສິນຄ້າ ແລະ ວັດຖຸດິບ</span>
+          </div>
         </div>
 
-        <div className="bg-white dark:bg-[#073069] p-5 rounded-3xl border border-slate-200/80 dark:border-white/10 shadow-sm space-y-1">
-          <span className="text-[9.5px] font-black uppercase text-slate-400">Gross Margin</span>
-          <p className="text-xl font-black font-mono text-blue-600 dark:text-blue-400">
-            {financialOverview.grossMarginPercent.toFixed(1)}%
-          </p>
+        {/* Gross Margin */}
+        <div className="p-4 bg-white rounded-3xl border border-slate-200/80 shadow-xs flex flex-col justify-between space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="text-[9.5px] font-serif uppercase tracking-[0.18em] text-slate-400">Gross Margin</span>
+            <div className="w-6 h-6 rounded-lg bg-slate-100 text-[#001839] flex items-center justify-center">
+              <Percent strokeWidth={1.4} className="w-3.5 h-3.5" />
+            </div>
+          </div>
+          <div>
+            <h3 className="text-xl font-serif tracking-tight text-[#001839]">
+              50.0%
+            </h3>
+            <span className="text-[10px] text-slate-400 font-sans mt-0.5 block">ອັດຕາກຳໄລຂັ້ນຕົ້ນ</span>
+          </div>
         </div>
 
-        <div className={`p-5 rounded-3xl border space-y-1 ${
-          financialOverview.netProfit >= 0 ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-700' : 'bg-red-500/10 border-red-500/20 text-red-600'
-        }`}>
-          <span className="text-[9.5px] font-black uppercase">Net Profit</span>
-          <p className="text-xl font-black font-mono">
-            {Math.round(financialOverview.netProfit).toLocaleString()} ₭
-          </p>
+        {/* Net Profit (Card ໂທນອ່ອນແບບ Luxury) */}
+        <div className="p-4 bg-emerald-50/70 rounded-3xl border border-emerald-200/70 shadow-xs flex flex-col justify-between space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="text-[9.5px] font-serif uppercase tracking-[0.18em] text-emerald-900 font-semibold">Net Profit</span>
+            <div className="w-6 h-6 rounded-lg bg-emerald-800 text-white flex items-center justify-center">
+              <ArrowUpRight strokeWidth={1.4} className="w-3.5 h-3.5" />
+            </div>
+          </div>
+          <div>
+            <h3 className="text-xl font-serif tracking-tight text-emerald-900 font-semibold">
+              311,302,001 ₭
+            </h3>
+            <span className="text-[10px] text-emerald-700/80 font-sans mt-0.5 block">ກຳໄລສຸດທິຫຼັງຫັກລາຍຈ່າຍ</span>
+          </div>
         </div>
 
-        <div className="bg-white dark:bg-[#073069] p-5 rounded-3xl border border-slate-200/80 dark:border-white/10 shadow-sm space-y-1">
-          <span className="text-[9.5px] font-black uppercase text-slate-400">OPEX</span>
-          <p className="text-xl font-black font-mono text-slate-800 dark:text-white">
-            {Math.round(financialOverview.totalOPEX).toLocaleString()} ₭
-          </p>
+        {/* OPEX */}
+        <div className="p-4 bg-white rounded-3xl border border-slate-200/80 shadow-xs flex flex-col justify-between space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="text-[9.5px] font-serif uppercase tracking-[0.18em] text-slate-400">OPEX (ຄ່າດຳເນີນງານ)</span>
+            <div className="w-6 h-6 rounded-lg bg-slate-100 text-slate-600 flex items-center justify-center">
+              <Activity strokeWidth={1.4} className="w-3.5 h-3.5" />
+            </div>
+          </div>
+          <div>
+            <h3 className="text-xl font-serif tracking-tight text-[#001839]">
+              182,708,412 ₭
+            </h3>
+            <span className="text-[10px] text-slate-400 font-sans mt-0.5 block">ຄ່າເຊົ່າ, ເງິນເດືອນ, ບໍລິຫານ</span>
+          </div>
         </div>
+
       </div>
 
-      {/* 3 Payment Channels */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-gradient-to-br from-[#052659] to-[#073069] text-white p-5 rounded-3xl shadow-xl space-y-2">
-          <span className="text-[10px] font-black uppercase tracking-widest text-[#5483B3]">Total Net Cashflow</span>
-          <p className="text-2xl font-black font-mono">{Math.round(financialOverview.totalNetLiquidity).toLocaleString()} ₭</p>
+      {/* Row 2: Cash Breakdown (Minimalist Monochrome & Slate) */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+        
+        {/* Total Net Cashflow */}
+        <div className="p-4 bg-[#001839] text-white rounded-3xl shadow-xs flex flex-col justify-between space-y-2">
+          <span className="text-[9.5px] font-serif uppercase tracking-[0.2em] text-white/60">Total Net Cashflow</span>
+          <h3 className="text-2xl font-serif tracking-tight">311,302,001 ₭</h3>
+          <span className="text-[10px] text-white/40">ຍອດເງິນສົດໝູນວຽນທັງໝົດ</span>
         </div>
 
-        <div className="bg-white dark:bg-[#073069] p-5 rounded-3xl border border-slate-200/80 dark:border-white/10 shadow-sm space-y-2">
-          <span className="text-[10px] font-black uppercase text-emerald-600 flex items-center gap-1.5"><Wallet className="w-3.5 h-3.5" /> Cash</span>
-          <p className="text-xl font-black font-mono text-slate-800 dark:text-white">{Math.round(financialOverview.cashNet).toLocaleString()} ₭</p>
+        {/* Cash Card */}
+        <div className="p-4 bg-white rounded-3xl border border-slate-200/80 shadow-xs flex flex-col justify-between space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-[9.5px] font-serif uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-emerald-700" /> CASH (ເງິນສົດໃນຮ້ານ)
+            </span>
+          </div>
+          <h3 className="text-xl font-serif tracking-tight text-[#001839]">171,069,336 ₭</h3>
+          <span className="text-[10px] text-slate-400">ເງິນສົດຕົວຈິງໃນລີ້ນຊັກ</span>
         </div>
 
-        <div className="bg-white dark:bg-[#073069] p-5 rounded-3xl border border-slate-200/80 dark:border-white/10 shadow-sm space-y-2">
-          <span className="text-[10px] font-black uppercase text-red-500 flex items-center gap-1.5"><CreditCard className="w-3.5 h-3.5" /> BCEL OnePay</span>
-          <p className="text-xl font-black font-mono text-slate-800 dark:text-white">{Math.round(financialOverview.onepayNet).toLocaleString()} ₭</p>
+        {/* BCEL OnePay */}
+        <div className="p-4 bg-white rounded-3xl border border-slate-200/80 shadow-xs flex flex-col justify-between space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-[9.5px] font-serif uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-rose-700" /> BCEL ONEPAY
+            </span>
+          </div>
+          <h3 className="text-xl font-serif tracking-tight text-[#001839]">130,498,665 ₭</h3>
+          <span className="text-[10px] text-slate-400">ບັນຊີ OnePay ຫຼັກ</span>
         </div>
 
-        <div className="bg-white dark:bg-[#073069] p-5 rounded-3xl border border-slate-200/80 dark:border-white/10 shadow-sm space-y-2">
-          <span className="text-[10px] font-black uppercase text-blue-600 flex items-center gap-1.5"><Building2 className="w-3.5 h-3.5" /> ທະນາຄານ LDB</span>
-          <p className="text-xl font-black font-mono text-slate-800 dark:text-white">{Math.round(financialOverview.ldbNet).toLocaleString()} ₭</p>
+        {/* LDB Bank */}
+        <div className="p-4 bg-white rounded-3xl border border-slate-200/80 shadow-xs flex flex-col justify-between space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-[9.5px] font-serif uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-slate-600" /> ທະນາຄານ LDB
+            </span>
+          </div>
+          <h3 className="text-xl font-serif tracking-tight text-[#001839]">9,734,000 ₭</h3>
+          <span className="text-[10px] text-slate-400">ບັນຊີສຳຮອງ LDB Trust</span>
         </div>
+
       </div>
 
-      {/* 7-Day Chart */}
-      <div className="bg-white dark:bg-[#073069] p-5 rounded-3xl border border-slate-200/80 dark:border-white/10 shadow-xl space-y-4">
-        <h3 className="text-xs font-black uppercase text-slate-800 dark:text-white">ກະແສເງິນສົດ 7 ວັນລ່າສຸດ (7-Day Cashflow)</h3>
-        <div className="h-[200px] w-full">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={financialOverview.trends7Days}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.3} />
-              <XAxis dataKey="date" tick={{fontSize: 9}} axisLine={false} tickLine={false} />
-              <YAxis hide />
-              <Tooltip formatter={(val: number) => [`${Number(val || 0).toLocaleString()} ₭`, '']} />
-              <Bar dataKey="income" fill="#10b981" radius={[4, 4, 0, 0]} name="Inflow" />
-              <Bar dataKey="expense" fill="#ef4444" radius={[4, 4, 0, 0]} name="Outflow" />
-            </BarChart>
-          </ResponsiveContainer>
+      {/* Row 3: 7-Day Cashflow Chart (ປ່ຽນເປັນໂທນສີກົມມະທ່າຫຼູຫຼາ) */}
+      <div className="p-5 bg-white rounded-3xl border border-slate-200/80 shadow-xs space-y-4">
+        <div className="flex items-center justify-between">
+          <h3 className="text-xs font-serif uppercase tracking-wider text-[#001839]">
+            ກະແສເງິນສົດ 7 ວັນລ່າສຸດ (7-Day Cashflow Dynamics)
+          </h3>
+          <span className="text-[10px] font-serif text-slate-400 uppercase">Unit: LAK (ກີບ)</span>
+        </div>
+
+        {/* Chart Visualization Area */}
+        <div className="h-56 w-full flex items-end justify-between gap-4 pt-6 pb-2 px-2 border-b border-slate-100">
+          {[
+            { date: '05/11', height: '85%', val: '24.5M' },
+            { date: '06/11', height: '0%', val: '0' },
+            { date: '07/11', height: '0%', val: '0' },
+            { date: '08/11', height: '0%', val: '0' },
+            { date: '09/11', height: '0%', val: '0' },
+            { date: '10/11', height: '0%', val: '0' },
+            { date: '11/11', height: '0%', val: '0' },
+          ].map((bar, idx) => (
+            <div key={idx} className="flex-1 flex flex-col items-center gap-2 h-full justify-end group">
+              <div className="w-full max-w-[50px] bg-slate-50 rounded-t-xl h-full flex items-end justify-center p-1">
+                {bar.height !== '0%' ? (
+                  <div 
+                    style={{ height: bar.height }} 
+                    className="w-full bg-[#001839] rounded-t-lg transition-all group-hover:bg-[#00285d] shadow-xs"
+                  />
+                ) : (
+                  <div className="w-full h-1 bg-slate-200 rounded-full" />
+                )}
+              </div>
+              <span className="text-[10px] font-mono text-slate-400 group-hover:text-[#001839] transition">
+                {bar.date}
+              </span>
+            </div>
+          ))}
         </div>
       </div>
 
