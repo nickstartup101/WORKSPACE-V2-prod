@@ -313,14 +313,6 @@ export default function Dashboard({ selectedBranch }: { selectedBranch?: string 
     </div>
   );
 }
-// ຕົວຢ່າງ: ທຸກໜ້າຈະໂຫຼດຂໍ້ມູນຈາກ Cache ຂຶ້ນມາສະແດງທັນທີ 0.00 ວິນາທີ
-const cacheKey = `global_cache_tx_${selectedBranch || 'branch_1'}`;
-const initialData = useMemo(() => {
-  try {
-    const cached = localStorage.getItem(cacheKey);
-    return cached ? JSON.parse(cached) : [];
-  } catch { return []; }
-}, [cacheKey]);
 
-const [transactions, setTransactions] = useState<any[]>(initialData);
+
 
