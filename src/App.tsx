@@ -289,18 +289,20 @@ export default function App() {
           </div>
         </header>
 
-        {/* Dynamic Screen View ສົ່ງ selectedBranch ໃຫ້ທຸກ Component */}
+        // 1. ດຶງລະຫັດ PIN ຕົວຈິງຈາກ Settings (ຖ້າບໍ່ມີຈຶ່ງໃຊ້ '1234')
+        const dynamicApprovalPin = localStorage.getItem('approval_pin') || localStorage.getItem('admin_master_pin') || '1234';
+
+        // 2. ສ່ວນ render ໃນ <main> ຂອງ App.tsx:
         <main className="flex-1 overflow-y-auto">
-          {activeTab === 'dashboard' && <Dashboard selectedBranch={selectedBranch} />}
-          {activeTab === 'reports' && <FinanceReport />}
-          {activeTab === 'debts' && <DebtLedger />}
-          {activeTab === 'suppliers' && <Suppliers />}
-          {activeTab === 'financials' && <Financials appConfig={{ masterApprovalPin: '1234' }} selectedBranch={selectedBranch} />}
-          {activeTab === 'settings' && <Settings />}
-        </main>
-
-      </div>
-
-    </div>
-  );
-}
+  {activeTab === 'dashboard' && <Dashboard selectedBranch={selectedBranch} />}
+  {activeTab === 'reports' && <FinanceReport selectedBranch={selectedBranch} />}
+  {activeTab === 'debts' && <DebtLedger />}
+  {activeTab === 'suppliers' && <Suppliers />}
+  {activeTab === 'financials' && (
+    <Financials 
+      appConfig={{ masterApprovalPin: dynamicApprovalPin }} 
+      selectedBranch={selectedBranch} 
+    />
+  )}
+  {activeTab === 'settings' && <Settings />}
+</main>
