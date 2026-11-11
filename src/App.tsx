@@ -19,7 +19,6 @@ import {
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
-// Import Components ຫຼັກ
 import Dashboard from './components/Dashboard';
 import FinanceReport from './components/FinanceReport';
 import DebtLedger from './components/DebtLedger';
@@ -31,7 +30,7 @@ export type TabType = 'dashboard' | 'reports' | 'debts' | 'suppliers' | 'financi
 
 export default function App() {
   const { i18n } = useTranslation();
-  const [activeTab, setActiveTab] = useState<TabType>('suppliers');
+  const [activeTab, setActiveTab] = useState<TabType>('dashboard');
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [selectedBranch, setSelectedBranch] = useState<string>('ສາຂາ 1 (ດອນໜູນ)');
   const [isDarkMode, setIsDarkMode] = useState<boolean>(false);
@@ -101,23 +100,23 @@ export default function App() {
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-slate-100/90 text-slate-800 font-sans">
       
-      {/* ===================== SIDEBAR (Deep Navy #001839) ===================== */}
+      {/* SIDEBAR: ປັບແຄບລົງເຫຼືອ w-[235px] ເພື່ອເພີ່ມພື້ນທີ່ເຮັດວຽກ */}
       <aside className={`
-        fixed inset-y-0 left-0 z-40 w-72 bg-[#001839] text-white flex flex-col justify-between border-r border-white/10 transition-transform duration-300 ease-in-out
+        fixed inset-y-0 left-0 z-40 w-[235px] bg-[#001839] text-white flex flex-col justify-between border-r border-white/10 transition-transform duration-300 ease-in-out shrink-0
         lg:static lg:translate-x-0 ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}
       `}>
         
-        {/* Logo & Brand Header */}
         <div>
-          <div className="p-6 border-b border-white/10 flex items-center justify-between">
+          {/* Brand Header */}
+          <div className="p-4 border-b border-white/10 flex items-center justify-between">
             <div>
-              <div className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-                <span className="text-[9px] font-serif tracking-[0.25em] text-white/60 uppercase">
+              <div className="flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                <span className="text-[8.5px] font-serif tracking-[0.2em] text-white/60 uppercase">
                   Workspace ESTD 2026
                 </span>
               </div>
-              <h1 className="text-2xl font-serif tracking-wider text-white mt-1">
+              <h1 className="text-xl font-serif tracking-wider text-white mt-0.5">
                 La Dolce cafe
               </h1>
             </div>
@@ -126,12 +125,12 @@ export default function App() {
               onClick={() => setMobileMenuOpen(false)} 
               className="lg:hidden text-white/60 hover:text-white cursor-pointer"
             >
-              <X strokeWidth={1.4} className="w-5 h-5" />
+              <X strokeWidth={1.4} className="w-4 h-4" />
             </button>
           </div>
 
-          {/* Navigation Menu Items */}
-          <nav className="p-4 space-y-1.5 overflow-y-auto max-h-[calc(100vh-240px)]">
+          {/* Navigation Items */}
+          <nav className="p-2.5 space-y-1 overflow-y-auto max-h-[calc(100vh-210px)]">
             {navItems.map((item) => {
               const Icon = item.icon;
               const isActive = activeTab === item.id;
@@ -144,9 +143,9 @@ export default function App() {
                     setMobileMenuOpen(false);
                   }}
                   className={`
-                    w-full flex items-center gap-3.5 px-4 py-3 rounded-2xl text-xs font-medium transition-all cursor-pointer
+                    w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-medium transition-all cursor-pointer
                     ${isActive 
-                      ? 'bg-white text-[#001839] shadow-md font-semibold' 
+                      ? 'bg-white text-[#001839] shadow-sm font-semibold' 
                       : 'text-white/70 hover:bg-white/5 hover:text-white'}
                   `}
                 >
@@ -154,9 +153,9 @@ export default function App() {
                     strokeWidth={1.4} 
                     className={`w-4 h-4 shrink-0 ${isActive ? 'text-[#001839]' : 'text-white/60'}`} 
                   />
-                  <div className="flex flex-col text-left leading-tight">
-                    <span className="text-[12px]">{item.labelLao}</span>
-                    <span className={`text-[9px] font-serif uppercase tracking-wider ${isActive ? 'text-[#001839]/60' : 'text-white/40'}`}>
+                  <div className="flex flex-col text-left leading-tight overflow-hidden">
+                    <span className="text-[11.5px] truncate">{item.labelLao}</span>
+                    <span className={`text-[8.5px] font-serif uppercase tracking-wider truncate ${isActive ? 'text-[#001839]/60' : 'text-white/40'}`}>
                       {item.labelEng}
                     </span>
                   </div>
@@ -166,18 +165,18 @@ export default function App() {
           </nav>
         </div>
 
-        {/* User Profile & Logout Area (Bottom Sidebar) */}
-        <div className="p-4 border-t border-white/10 bg-[#00132e]/60 space-y-3">
-          <div className="flex items-center gap-3 px-2">
-            <div className="w-10 h-10 rounded-2xl bg-orange-500 text-white font-serif text-lg font-bold flex items-center justify-center shrink-0 shadow-sm border border-orange-400/30">
+        {/* User Footer (ກະທັດຮັດ) */}
+        <div className="p-3 border-t border-white/10 bg-[#00132e]/60 space-y-2.5">
+          <div className="flex items-center gap-2.5 px-1.5">
+            <div className="w-8 h-8 rounded-xl bg-orange-500 text-white font-serif text-sm font-bold flex items-center justify-center shrink-0 border border-orange-400/30">
               T
             </div>
             <div className="overflow-hidden">
-              <p className="text-xs font-medium text-white truncate">
+              <p className="text-[11px] font-medium text-white truncate">
                 {currentUser?.displayName || 'Tonick bouddasien'}
               </p>
-              <span className="inline-flex items-center gap-1 text-[9px] font-serif tracking-widest text-emerald-400 uppercase mt-0.5">
-                <ShieldCheck strokeWidth={1.4} className="w-3 h-3 text-emerald-400" />
+              <span className="inline-flex items-center gap-1 text-[8px] font-serif tracking-widest text-emerald-400 uppercase">
+                <ShieldCheck strokeWidth={1.4} className="w-2.5 h-2.5 text-emerald-400" />
                 ADMINISTRATOR
               </span>
             </div>
@@ -185,31 +184,30 @@ export default function App() {
 
           <button
             onClick={handleLogout}
-            className="w-full py-2.5 px-3 rounded-xl bg-white/5 hover:bg-rose-500/20 text-rose-300 hover:text-rose-200 border border-white/5 text-xs font-serif uppercase tracking-wider flex items-center justify-center gap-2 transition cursor-pointer"
+            className="w-full py-2 px-2.5 rounded-lg bg-white/5 hover:bg-rose-500/20 text-rose-300 hover:text-rose-200 border border-white/5 text-[10px] font-serif uppercase tracking-wider flex items-center justify-center gap-1.5 transition cursor-pointer"
           >
-            <LogOut strokeWidth={1.4} className="w-4 h-4" />
-            <span>ອອກຈາກລະບົບ (Logout)</span>
+            <LogOut strokeWidth={1.4} className="w-3.5 h-3.5" />
+            <span>ອອກຈາກລະບົບ (LOGOUT)</span>
           </button>
         </div>
 
       </aside>
 
-      {/* ===================== MAIN CONTENT WRAPPER ===================== */}
+      {/* ===================== WORKSPACE CONTENT AREA ===================== */}
       <div className="flex-1 flex flex-col h-screen overflow-hidden">
         
-        {/* Top Header Bar */}
-        <header className="h-16 bg-white border-b border-slate-200/80 px-4 sm:px-6 flex items-center justify-between shrink-0 shadow-xs z-30">
-          
+        {/* Top Header */}
+        <header className="h-14 bg-white border-b border-slate-200/80 px-4 sm:px-6 flex items-center justify-between shrink-0 z-30">
           <div className="flex items-center gap-3">
             <button
               onClick={() => setMobileMenuOpen(true)}
-              className="lg:hidden p-2 text-slate-600 hover:bg-slate-100 rounded-xl cursor-pointer"
+              className="lg:hidden p-1.5 text-slate-600 hover:bg-slate-100 rounded-lg cursor-pointer"
             >
               <Menu strokeWidth={1.4} className="w-5 h-5" />
             </button>
 
-            {/* Branch Selector */}
-            <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-[#001839]">
+            {/* Branch Badge */}
+            <div className="flex items-center gap-2 px-3 py-1 bg-slate-50 border border-slate-200 rounded-xl text-xs text-[#001839]">
               <Store strokeWidth={1.4} className="w-3.5 h-3.5 text-[#001839]" />
               <select 
                 value={selectedBranch}
@@ -222,24 +220,19 @@ export default function App() {
             </div>
           </div>
 
-          {/* Quick Actions (Language, Theme, Date) */}
-          <div className="flex items-center gap-2.5">
-            
-            {/* ປຸ່ມປ່ຽນພາສາ */}
+          {/* Quick Actions */}
+          <div className="flex items-center gap-2">
             <button
               onClick={toggleLanguage}
-              className="px-3 py-1.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-xs font-serif uppercase tracking-wider text-[#001839] flex items-center gap-1.5 transition cursor-pointer"
-              title="ປ່ຽນພາສາ (Switch Language)"
+              className="px-3 py-1 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-xs font-serif uppercase tracking-wider text-[#001839] flex items-center gap-1.5 cursor-pointer"
             >
               <Globe strokeWidth={1.4} className="w-3.5 h-3.5" />
               <span>{i18n.language === 'la' ? 'LA' : 'EN'}</span>
             </button>
 
-            {/* ປຸ່ມ Dark/Light Mode Switcher */}
             <button
               onClick={() => setIsDarkMode(!isDarkMode)}
-              className="p-2 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-[#001839] transition cursor-pointer"
-              title="Toggle Theme"
+              className="p-1.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-[#001839] cursor-pointer"
             >
               {isDarkMode ? (
                 <Sun strokeWidth={1.4} className="w-4 h-4 text-amber-500" />
@@ -247,11 +240,10 @@ export default function App() {
                 <Moon strokeWidth={1.4} className="w-4 h-4 text-[#001839]" />
               )}
             </button>
-
           </div>
         </header>
 
-        {/* Dynamic Page Component Render */}
+        {/* Dynamic Screen View */}
         <main className="flex-1 overflow-y-auto">
           {activeTab === 'dashboard' && <Dashboard />}
           {activeTab === 'reports' && <FinanceReport />}
