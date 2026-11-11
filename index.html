@@ -1,21 +1,34 @@
-<!doctype html>
-<html lang="en">
+<!DOCTYPE html>
+<html lang="lo">
   <head>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Noto+Sans+Lao:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <!-- Google Fonts: DM Serif Display & Noto Sans Lao -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Noto+Sans+Lao:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <!-- 🌟 ດຶງຟ້ອນ Noto Sans Lao ຈາກ Google Fonts ໃຫ້ Apple ຮອງຮັບ 100% -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Lao:wght@300;400;500;600;700;800;900&family=Alice&display=swap" rel="stylesheet">
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>La Dolce workspace</title>
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>La Dolce Cafe Workspace</title>
+
+    <!-- 1. ດຶງ Tailwind CSS ມາໃຊ້ໂດຍກົງ (ແກ້ບັນຫາ CSS ບໍ່ Compile) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- 2. ດຶງ Google Fonts (DM Serif Display + Noto Sans Lao) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Noto+Sans+Lao:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+    <!-- 3. ກຳນົດຄ່າ Font ໃຫ້ Tailwind -->
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: {
+              serif: ['"DM Serif Display"', 'serif'],
+              sans: ['"Noto Sans Lao"', 'sans-serif'],
+            },
+            colors: {
+              navy: '#001839',
+            }
+          }
+        }
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>
