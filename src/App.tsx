@@ -15,8 +15,7 @@ import {
   ChevronLeft,
   ChevronRight,
   PieChart,
-  Receipt,
-  PiggyBank
+  Receipt
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { auth, db, handleFirestoreError, OperationType } from './firebase';
@@ -24,7 +23,7 @@ import { signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged, User 
 import { doc, onSnapshot, setDoc, serverTimestamp, collection, query, where, limit } from 'firebase/firestore';
 import './i18n';
 
-// Components
+// Components ທີ່ມີຕົວຕົນແທ້ໆໃນໂປຣເຈັກ
 import Dashboard from './components/Dashboard';
 import Suppliers from './components/Suppliers';
 import Financials from './components/Financials';
@@ -32,7 +31,6 @@ import Settings from './components/Settings';
 import PinModal from './components/PinModal';
 import FinanceReport from './components/FinanceReport';
 import DebtLedger from './components/DebtLedger';
-import DividendSettlement from './components/DividendSettlement';
 
 // 🌟 Luxury Editorial Text Logo
 const TextLogo = ({ centered = false, dark = false, name = "La Dolce" }: { centered?: boolean, dark?: boolean, name?: string | null }) => (
@@ -234,11 +232,10 @@ export default function App() {
     );
   }
 
-  // 🌟 Sidebar Menu
+  // 🌟 ລາຍການເມນູສະເພາະທີ່ມີໄຟລ໌ຕົວຈິງໃນໂປຣເຈັກ
   const navItems = [
     { id: 'dashboard', icon: LayoutDashboard, label: t('dashboard') },
     { id: 'report', icon: PieChart, label: i18n.language === 'la' ? 'ບົດລາຍງານການເງິນ' : 'Finance Report' },
-    { id: 'dividends', icon: PiggyBank, label: i18n.language === 'la' ? 'ປັນຜົນ & ເງິນ Stock' : 'Dividends & Stock Fund' },
     { id: 'debts', icon: Receipt, label: i18n.language === 'la' ? 'ໜີ້ຕ້ອງສົ່ງ & ຮັບ (AP/AR)' : 'Debt Ledger' },
     { id: 'suppliers', icon: Truck, label: t('suppliers') },
     { id: 'financials', icon: Wallet, label: t('financials'), isSensitive: true },
@@ -428,7 +425,6 @@ export default function App() {
           <div className="max-w-7xl mx-auto space-y-6">
             {activeTab === 'dashboard' && <Dashboard userSettings={userSettings} user={user} selectedBranch={selectedBranch} />}
             {activeTab === 'report' && <FinanceReport selectedBranch={selectedBranch} />}
-            {activeTab === 'dividends' && <DividendSettlement selectedBranch={selectedBranch} />}
             {activeTab === 'debts' && <DebtLedger selectedBranch={selectedBranch} />}
             {activeTab === 'suppliers' && <Suppliers />}
             {activeTab === 'financials' && <Financials appConfig={appConfig} selectedBranch={selectedBranch} />}
