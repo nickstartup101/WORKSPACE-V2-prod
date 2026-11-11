@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { auth } from './firebase';
+import { auth, db } from './firebase';
 import { signOut, onAuthStateChanged, User } from 'firebase/auth';
+import { doc, getDoc } from 'firebase/firestore';
 import { 
   LayoutDashboard, 
   BarChart3, 
@@ -30,15 +31,34 @@ export type TabType = 'dashboard' | 'reports' | 'debts' | 'suppliers' | 'financi
 
 export default function App() {
   const { i18n } = useTranslation();
-  const [activeTab, setActiveTab] = useState<TabType>('dashboard');
   const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [userRole, setUserRole] = useState<'admin' | 'manager' | 'staff'>('admin');
+  const [activeTab, setActiveTab] = useState<TabType>('suppliers');
   const [selectedBranch, setSelectedBranch] = useState<string>('ສາຂາ 1 (ດອນໜູນ)');
   const [isDarkMode, setIsDarkMode] = useState<boolean>(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
 
+  // 1. ກວດສອບສິດຜູ້ໃຊ້ຈາກ Firebase Auth & Firestore Permissions
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
       setCurrentUser(user);
+      if (user?.email) {
+        try {
+          const permSnap = await getDoc(doc(db, 'settings', 'user_permissions'));
+          if (permSnap.exists() && Array.isArray(permSnap.data()?.users)) {
+            const matched = permSnap.data().users.find((u: any) => u.email === user.email.toLowerCase());
+            if (matched) {
+              setUserRole(matched.role);
+              // ຖ້າເປັນ Staff ໃຫ້ຕັ້ງໜ້າເລີ່ມຕົ້ນເປັນ suppliers
+              if (matched.role === 'staff') {
+                setActiveTab('suppliers');
+              }
+              return;
+            }
+          }
+        } catch (err) {}
+      }
+      setUserRole('admin'); // Default ຖ້າບໍ່ພົບ
     });
     return () => unsubscribe();
   }, []);
@@ -53,54 +73,66 @@ export default function App() {
     }
   };
 
+  const currentLang = (i18n.language && i18n.language.startsWith('en')) ? 'en' : 'la';
   const toggleLanguage = () => {
-    const nextLang = i18n.language === 'la' ? 'en' : 'la';
+    const nextLang = currentLang === 'la' ? 'en' : 'la';
     i18n.changeLanguage(nextLang);
+    localStorage.setItem('i18nextLng', nextLang);
   };
 
-  const navItems = [
+  // 2. ລາຍການເມນູ ພ້ອມກຳນົດສິດ (Roles allowed)
+  const allNavItems = [
     {
       id: 'dashboard' as TabType,
       labelLao: 'ແດຊບອດ (Overview)',
       labelEng: 'Dashboard',
       icon: LayoutDashboard,
+      roles: ['admin', 'manager'], // Staff ບໍ່ເຫັນ!
     },
     {
       id: 'reports' as TabType,
       labelLao: 'ບົດລາຍງານການເງິນ',
       labelEng: 'Financial Reports',
       icon: BarChart3,
+      roles: ['admin'], // ສະເພາະ Admin ເທົ່ານັ້ນ!
     },
     {
       id: 'debts' as TabType,
       labelLao: 'ໜີ້ຕ້ອງສົ່ງ & ຮັບ (AP/AR)',
       labelEng: 'Debt Ledger',
       icon: Receipt,
+      roles: ['admin', 'manager'],
     },
     {
       id: 'suppliers' as TabType,
       labelLao: 'ລະບົບຈັດຊື້ & ຜູ້ສະໜອງ',
       labelEng: 'Supplier Procurement',
       icon: Truck,
+      roles: ['admin', 'manager', 'staff'], // Staff ເຂົ້າໄດ້
     },
     {
       id: 'financials' as TabType,
       labelLao: 'ລາຍຮັບ / ລາຍຈ່າຍ',
       labelEng: 'Cashflow & Financials',
       icon: ArrowLeftRight,
+      roles: ['admin', 'manager', 'staff'], // Staff ເຂົ້າໄດ້ (ມີ PIN)
     },
     {
       id: 'settings' as TabType,
       labelLao: 'ຕັ້ງຄ່າລະບົບ',
       labelEng: 'Settings',
       icon: SettingsIcon,
+      roles: ['admin'], // ສະເພາະ Admin ເທົ່ານັ້ນ!
     },
   ];
+
+  // ກັ່ນຕອງເມນູຕາມ Role ຕົວຈິງ
+  const allowedNavItems = allNavItems.filter(item => item.roles.includes(userRole));
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-slate-100/90 text-slate-800 font-sans">
       
-      {/* SIDEBAR: ປັບແຄບລົງເຫຼືອ w-[235px] ເພື່ອເພີ່ມພື້ນທີ່ເຮັດວຽກ */}
+      {/* SIDEBAR (w-[235px] ແຄບກະທັດຮັດ) */}
       <aside className={`
         fixed inset-y-0 left-0 z-40 w-[235px] bg-[#001839] text-white flex flex-col justify-between border-r border-white/10 transition-transform duration-300 ease-in-out shrink-0
         lg:static lg:translate-x-0 ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}
@@ -129,9 +161,9 @@ export default function App() {
             </button>
           </div>
 
-          {/* Navigation Items */}
+          {/* Nav Items ທີ່ຖືກກັ່ນຕອງສິດແລ້ວ */}
           <nav className="p-2.5 space-y-1 overflow-y-auto max-h-[calc(100vh-210px)]">
-            {navItems.map((item) => {
+            {allowedNavItems.map((item) => {
               const Icon = item.icon;
               const isActive = activeTab === item.id;
 
@@ -165,19 +197,21 @@ export default function App() {
           </nav>
         </div>
 
-        {/* User Footer (ກະທັດຮັດ) */}
+        {/* User Footer ສະແດງ Role ຕົວຈິງ */}
         <div className="p-3 border-t border-white/10 bg-[#00132e]/60 space-y-2.5">
           <div className="flex items-center gap-2.5 px-1.5">
             <div className="w-8 h-8 rounded-xl bg-orange-500 text-white font-serif text-sm font-bold flex items-center justify-center shrink-0 border border-orange-400/30">
-              T
+              {currentUser?.displayName ? currentUser.displayName.slice(0, 1).toUpperCase() : 'T'}
             </div>
             <div className="overflow-hidden">
               <p className="text-[11px] font-medium text-white truncate">
-                {currentUser?.displayName || 'Tonick bouddasien'}
+                {currentUser?.displayName || currentUser?.email || 'Tonick bouddasien'}
               </p>
-              <span className="inline-flex items-center gap-1 text-[8px] font-serif tracking-widest text-emerald-400 uppercase">
-                <ShieldCheck strokeWidth={1.4} className="w-2.5 h-2.5 text-emerald-400" />
-                ADMINISTRATOR
+              <span className={`inline-flex items-center gap-1 text-[8px] font-serif tracking-widest uppercase ${
+                userRole === 'admin' ? 'text-rose-400' : userRole === 'manager' ? 'text-blue-400' : 'text-emerald-400'
+              }`}>
+                <ShieldCheck strokeWidth={1.4} className="w-2.5 h-2.5" />
+                {userRole.toUpperCase()}
               </span>
             </div>
           </div>
@@ -193,7 +227,7 @@ export default function App() {
 
       </aside>
 
-      {/* ===================== WORKSPACE CONTENT AREA ===================== */}
+      {/* WORKSPACE AREA */}
       <div className="flex-1 flex flex-col h-screen overflow-hidden">
         
         {/* Top Header */}
@@ -206,7 +240,6 @@ export default function App() {
               <Menu strokeWidth={1.4} className="w-5 h-5" />
             </button>
 
-            {/* Branch Badge */}
             <div className="flex items-center gap-2 px-3 py-1 bg-slate-50 border border-slate-200 rounded-xl text-xs text-[#001839]">
               <Store strokeWidth={1.4} className="w-3.5 h-3.5 text-[#001839]" />
               <select 
@@ -220,14 +253,13 @@ export default function App() {
             </div>
           </div>
 
-          {/* Quick Actions */}
           <div className="flex items-center gap-2">
             <button
               onClick={toggleLanguage}
               className="px-3 py-1 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-xs font-serif uppercase tracking-wider text-[#001839] flex items-center gap-1.5 cursor-pointer"
             >
               <Globe strokeWidth={1.4} className="w-3.5 h-3.5" />
-              <span>{i18n.language === 'la' ? 'LA' : 'EN'}</span>
+              <span>{currentLang === 'la' ? 'LA' : 'EN'}</span>
             </button>
 
             <button
