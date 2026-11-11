@@ -9,7 +9,7 @@ import {
   PlusCircle, Eye, EyeOff, Trash2, 
   Sparkles, CheckCircle2, Wallet, CreditCard,
   Building2, DollarSign, Edit3, Check, Split,
-  AlertCircle, Upload, Image as ImageIcon, X, FileText
+  AlertCircle, Upload, Image as ImageIcon
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import PinModal from './PinModal';
@@ -17,10 +17,10 @@ import PinModal from './PinModal';
 export type PaymentChannel = 'Cash' | 'Onepay' | 'LDB';
 
 export default function Financials({ appConfig, selectedBranch }: { appConfig?: any, selectedBranch?: string }) {
-  const { t, i18n } = useTranslation();
+  const { i18n } = useTranslation();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // 1. LocalStorage Instant Cache (ໂຫຼດຂໍ້ມູນຈາກ Cache ຂຶ້ນມາກ່ອນທັນທີ 0ms)
+  // 1. LocalStorage Instant Cache (0.0s Load)
   const cacheKey = `cache_tx_${selectedBranch || 'branch_1'}`;
   const initialCachedData = useMemo(() => {
     try {
@@ -33,18 +33,17 @@ export default function Financials({ appConfig, selectedBranch }: { appConfig?: 
   const [dailyTransactions, setDailyTransactions] = useState<any[]>([]);
   const [showPrivacy, setShowPrivacy] = useState(false);
 
-  // 2. Loading Animation State (ບອກເປັນ %)
+  // 2. Loading Animation with Progress %
   const [isLoading, setIsLoading] = useState(allTransactions.length === 0);
-  const [loadPercent, setLoadPercent] = useState(allTransactions.length > 0 ? 100 : 15);
+  const [loadPercent, setLoadPercent] = useState(allTransactions.length > 0 ? 100 : 20);
 
-  // In-App Toast
+  // Toast
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
   const showToast = (message: string, type: 'success' | 'error' | 'info' = 'success') => {
     setToast({ message, type });
     setTimeout(() => setToast(null), 2500);
   };
 
-  // Timeframe View Mode & Date View
   const [timeframeMode, setTimeframeMode] = useState<'month' | 'all'>('month');
   const [viewDate, setViewDate] = useState(format(new Date(), 'yyyy-MM-dd'));
 
@@ -63,7 +62,7 @@ export default function Financials({ appConfig, selectedBranch }: { appConfig?: 
   const [receiptImageBase64, setReceiptImageBase64] = useState<string>('');
   const [isDragging, setIsDragging] = useState(false);
 
-  // 3-Way Split Income States
+  // 3-Way Split Income
   const [is3WaySplit, setIs3WaySplit] = useState(true);
   const [splitCash, setSplitCash] = useState<number>(0);
   const [splitCashDisplay, setSplitCashDisplay] = useState<string>('');
@@ -72,7 +71,7 @@ export default function Financials({ appConfig, selectedBranch }: { appConfig?: 
   const [splitLDB, setSplitLDB] = useState<number>(0);
   const [splitLDBDisplay, setSplitLDBDisplay] = useState<string>('');
 
-  // Edit / Delete with PIN states
+  // Modals PIN
   const [isEditing, setIsEditing] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showEditPinModal, setShowEditPinModal] = useState(false);
@@ -80,7 +79,7 @@ export default function Financials({ appConfig, selectedBranch }: { appConfig?: 
   const [txToDelete, setTxToDelete] = useState<any>(null);
   const [showDeletePinModal, setShowDeletePinModal] = useState(false);
 
-  // Supplier Purchases Pull States
+  // Supplier Purchases Pull
   const [supplierPrices, setSupplierPrices] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
   const [pullDate, setPullDate] = useState(format(new Date(), 'yyyy-MM-dd'));
@@ -102,7 +101,7 @@ export default function Financials({ appConfig, selectedBranch }: { appConfig?: 
     return Number(clean).toLocaleString();
   };
 
-  // Image Processing & Compression (< 80KB)
+  // Image Compression & Ctrl + V Paste
   const processReceiptFile = (fileOrBlob: Blob | File) => {
     if (!fileOrBlob) return;
     const reader = new FileReader();
@@ -117,15 +116,13 @@ export default function Financials({ appConfig, selectedBranch }: { appConfig?: 
         canvas.height = img.width > MAX_WIDTH ? img.height * scale : img.height;
         const ctx = canvas.getContext('2d');
         ctx?.drawImage(img, 0, 0, canvas.width, canvas.height);
-        const compressedBase64 = canvas.toDataURL('image/jpeg', 0.5);
-        setReceiptImageBase64(compressedBase64);
+        setReceiptImageBase64(canvas.toDataURL('image/jpeg', 0.5));
         showToast("ອັບໂຫຼດຮູບໃບບິນສຳເລັດ!", "info");
       };
     };
     reader.readAsDataURL(fileOrBlob);
   };
 
-  // 🌟 Global Clipboard Listener (Ctrl + V ສຳລັບວາງຮູບດ່ວນ)
   useEffect(() => {
     const handlePaste = (e: ClipboardEvent) => {
       const clipboard = e.clipboardData;
@@ -161,7 +158,6 @@ export default function Financials({ appConfig, selectedBranch }: { appConfig?: 
     return () => window.removeEventListener('paste', handlePaste);
   }, []);
 
-  // Safe Auto-balance for Income Split
   const handleTotalAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const rawValue = e.target.value.replace(/,/g, '');
     if (rawValue === '' || !isNaN(Number(rawValue))) {
@@ -217,14 +213,14 @@ export default function Financials({ appConfig, selectedBranch }: { appConfig?: 
     }
   };
 
-  // Real-time Sync from Firestore with Loading % and LocalStorage Cache
+  // Sync Data
   useEffect(() => {
-    setLoadPercent(35);
+    setLoadPercent(40);
     const qAll = query(collection(db, 'transactions'), orderBy('date', 'desc'));
     const branchId = selectedBranch || 'branch_1';
 
     const unsubscribeAll = onSnapshot(qAll, (snap) => {
-      setLoadPercent(75);
+      setLoadPercent(80);
       const all = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       const branchFiltered = branchId === 'all' 
         ? all 
@@ -232,7 +228,6 @@ export default function Financials({ appConfig, selectedBranch }: { appConfig?: 
 
       setAllTransactions(branchFiltered);
 
-      // Save to LocalStorage Cache
       try {
         localStorage.setItem(cacheKey, JSON.stringify(branchFiltered));
       } catch {}
@@ -268,7 +263,7 @@ export default function Financials({ appConfig, selectedBranch }: { appConfig?: 
     setPaymentDate(viewDate);
   }, [viewDate]);
 
-  // Financial KPIs (ກົງກັບຮູບທີ 3 ແບບ 100%)
+  // Financial Summary
   const financialSummary = useMemo(() => {
     const now = new Date();
 
@@ -326,7 +321,7 @@ export default function Financials({ appConfig, selectedBranch }: { appConfig?: 
     };
   }, [allTransactions, timeframeMode]);
 
-  // Pull Supplier Bills Grouping
+  // Supplier Bills
   const importedSupplierPriceIds = useMemo(() => {
     const ids = new Set<string>();
     allTransactions.forEach((tx) => {
@@ -576,7 +571,7 @@ export default function Financials({ appConfig, selectedBranch }: { appConfig?: 
   return (
     <div className="p-4 sm:p-5 space-y-5 bg-slate-100/90 min-h-screen text-slate-800 relative font-sans">
 
-      {/* Loading Animation Bar with Percentage % */}
+      {/* Loading Progress Bar */}
       {isLoading && (
         <div className="fixed top-0 left-0 right-0 z-[120] h-1 bg-slate-200">
           <div 
@@ -586,7 +581,7 @@ export default function Financials({ appConfig, selectedBranch }: { appConfig?: 
         </div>
       )}
 
-      {/* Modern In-App Toast */}
+      {/* Toast */}
       {toast && (
         <div className="fixed top-6 right-6 z-[100] animate-in fade-in slide-in-from-top-4 duration-300 pointer-events-none">
           <div className={`px-4 py-3 rounded-2xl shadow-xl border flex items-center gap-2.5 text-xs font-serif uppercase tracking-wider ${
@@ -598,7 +593,7 @@ export default function Financials({ appConfig, selectedBranch }: { appConfig?: 
         </div>
       )}
 
-      {/* ================= 1. HEADER (ຄືກັນກັບຮູບທີ 3 ເປະ) ================= */}
+      {/* 1. Header (ຄືກັນກັບຮູບທີ 3 ເປະ) */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 sm:p-5 bg-white rounded-3xl border border-slate-200/80 shadow-xs">
         <div className="flex items-center gap-3.5">
           <div className="w-11 h-11 rounded-2xl bg-[#001839]/5 text-[#001839] flex items-center justify-center border border-[#001839]/10">
@@ -651,10 +646,8 @@ export default function Financials({ appConfig, selectedBranch }: { appConfig?: 
         </div>
       </div>
 
-      {/* ================= 2. 4 PAYMENT LIQUIDITY CARDS (ຄືກັນກັບຮູບທີ 3 ເປະ) ================= */}
+      {/* 2. 4 Payment Liquidity Cards (ຄືກັນກັບຮູບທີ 3 ເປະ) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
-        
-        {/* Card 1: TOTAL NET CASHFLOW (Navy #001839) */}
         <div className="bg-[#001839] text-white p-4 sm:p-5 rounded-3xl shadow-xs space-y-2 relative overflow-hidden">
           <div className="flex justify-between items-center">
             <span className="text-[9.5px] font-serif uppercase tracking-[0.2em] text-white/60">
@@ -672,7 +665,6 @@ export default function Financials({ appConfig, selectedBranch }: { appConfig?: 
           </p>
         </div>
 
-        {/* Card 2: CASH IN HAND */}
         <div className="bg-white p-4 sm:p-5 rounded-3xl border border-slate-200/80 shadow-xs space-y-2">
           <div className="flex justify-between items-center">
             <span className="text-[9.5px] font-serif uppercase tracking-wider text-slate-400 flex items-center gap-1.5 font-bold">
@@ -690,7 +682,6 @@ export default function Financials({ appConfig, selectedBranch }: { appConfig?: 
           </div>
         </div>
 
-        {/* Card 3: ONEPAY BALANCE */}
         <div className="bg-white p-4 sm:p-5 rounded-3xl border border-slate-200/80 shadow-xs space-y-2">
           <div className="flex justify-between items-center">
             <span className="text-[9.5px] font-serif uppercase tracking-wider text-slate-400 flex items-center gap-1.5 font-bold">
@@ -708,7 +699,6 @@ export default function Financials({ appConfig, selectedBranch }: { appConfig?: 
           </div>
         </div>
 
-        {/* Card 4: LDB BALANCE */}
         <div className="bg-white p-4 sm:p-5 rounded-3xl border border-slate-200/80 shadow-xs space-y-2">
           <div className="flex justify-between items-center">
             <span className="text-[9.5px] font-serif uppercase tracking-wider text-slate-400 flex items-center gap-1.5 font-bold">
@@ -725,13 +715,12 @@ export default function Financials({ appConfig, selectedBranch }: { appConfig?: 
             <span className="text-rose-700 font-bold">-{Math.round(financialSummary.ldbExpense).toLocaleString()}</span>
           </div>
         </div>
-
       </div>
 
-      {/* ================= 3. TRANSACTION FORM & RIGHT LEDGER TABLE (ຄືກັນກັບຮູບທີ 3) ================= */}
+      {/* 3. Transaction Form & Right Ledger Table */}
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-5 items-start">
 
-        {/* LEFT COLUMN: ຟອມປ້ອນຂໍ້ມູນ (5 ຖັນ) */}
+        {/* LEFT COLUMN: ຟອມປ້ອນຂໍ້ມູນ */}
         <div className="xl:col-span-5 space-y-4">
           <div className="bg-white p-5 sm:p-6 rounded-3xl border border-slate-200/80 shadow-xs space-y-4">
             
@@ -752,7 +741,6 @@ export default function Financials({ appConfig, selectedBranch }: { appConfig?: 
 
             <form onSubmit={handleAddTransaction} className="space-y-3.5">
               
-              {/* Type Switcher: EXPENSE vs INCOME */}
               <div className="grid grid-cols-2 gap-2 p-1 bg-slate-100 rounded-2xl">
                 <button 
                   type="button" 
@@ -774,7 +762,6 @@ export default function Financials({ appConfig, selectedBranch }: { appConfig?: 
                 </button>
               </div>
 
-              {/* DATE & TIME */}
               <div className="grid grid-cols-2 gap-2">
                 <div className="space-y-1">
                   <label className="text-[9.5px] font-serif uppercase tracking-wider text-[#001839]">DATE</label>
@@ -798,7 +785,6 @@ export default function Financials({ appConfig, selectedBranch }: { appConfig?: 
                 </div>
               </div>
 
-              {/* TOTAL AMOUNT (₭) */}
               <div className="space-y-1">
                 <div className="flex justify-between items-center">
                   <label className="text-[9.5px] font-serif uppercase tracking-wider text-[#001839]">
@@ -821,7 +807,6 @@ export default function Financials({ appConfig, selectedBranch }: { appConfig?: 
                 />
               </div>
 
-              {/* 3-Way Split Section for Income */}
               {formData.type === 'income' && !isEditing && (
                 <div className="p-3 bg-emerald-50/50 border border-emerald-200/60 rounded-2xl space-y-2.5">
                   <div className="flex justify-between items-center border-b border-emerald-200/50 pb-1.5">
@@ -868,7 +853,6 @@ export default function Financials({ appConfig, selectedBranch }: { appConfig?: 
                 </div>
               )}
 
-              {/* CATEGORY & PAID VIA */}
               <div className="grid grid-cols-2 gap-2">
                 <div className="space-y-1">
                   <label className="text-[9.5px] font-serif uppercase tracking-wider text-[#001839]">CATEGORY</label>
@@ -911,7 +895,7 @@ export default function Financials({ appConfig, selectedBranch }: { appConfig?: 
                 </div>
               </div>
 
-              {/* 🌟 ບ່ອນອັບໂຫຼດຮູບໃບບິນ (Dropzone ພ້ອມ Drag & Drop ແລະ Ctrl + V) */}
+              {/* ບ່ອນອັບໂຫຼດຮູບໃບບິນ (Dropzone ພ້ອມ Drag & Drop ແລະ Ctrl + V) */}
               <div 
                 onDragOver={e => { e.preventDefault(); setIsDragging(true); }}
                 onDragLeave={() => setIsDragging(false)}
@@ -952,7 +936,6 @@ export default function Financials({ appConfig, selectedBranch }: { appConfig?: 
                 )}
               </div>
 
-              {/* Description */}
               <div className="space-y-1">
                 <label className="text-[9.5px] font-serif uppercase tracking-wider text-[#001839]">DESCRIPTION / MEMO</label>
                 <input 
@@ -999,7 +982,7 @@ export default function Financials({ appConfig, selectedBranch }: { appConfig?: 
                       <button 
                         type="button" 
                         onClick={() => handlePullSupplierBill(bill)} 
-                        className="px-3 py-1 bg-[#001839] text-white rounded-lg text-[10px] font-serif uppercase"
+                        className="px-3 py-1 bg-[#001839] text-white rounded-lg text-[10px] font-serif uppercase cursor-pointer"
                       >
                         Pull
                       </button>
@@ -1013,11 +996,10 @@ export default function Financials({ appConfig, selectedBranch }: { appConfig?: 
           </div>
         </div>
 
-        {/* ================= RIGHT COLUMN: ຕາຕະລາງລາຍການ (7 ຖັນ - ຄືກັນກັບຮູບທີ 3 ເປະ) ================= */}
+        {/* RIGHT COLUMN: ຕາຕະລາງລາຍການ (ຄືກັນກັບຮູບທີ 3 ເປະ) */}
         <div className="xl:col-span-7">
           <div className="bg-white border border-slate-200/80 shadow-xs rounded-3xl overflow-hidden min-h-[550px] flex flex-col">
             
-            {/* Header: Date picker & Records count */}
             <div className="p-4 border-b border-slate-100 flex items-center gap-3">
               <input 
                 type="date" 
@@ -1030,7 +1012,6 @@ export default function Financials({ appConfig, selectedBranch }: { appConfig?: 
               </span>
             </div>
 
-            {/* Transaction Rows (Left vertical bar, Title, Subtitle, Channel badge, Amount, Edit, Delete) */}
             <div className="flex-1 overflow-x-auto divide-y divide-slate-100">
               {dailyTransactions.map(tx => {
                 const ch = normalizePaymentChannel(tx.source || tx.paymentMethod);
@@ -1039,7 +1020,6 @@ export default function Financials({ appConfig, selectedBranch }: { appConfig?: 
                 return (
                   <div key={tx.id} className="p-4 flex justify-between items-center hover:bg-slate-50/70 transition">
                     
-                    {/* Left: Indicator Line + Title + Description */}
                     <div className="flex items-center gap-3.5">
                       <div className={`w-1 h-9 rounded-full ${isInc ? 'bg-emerald-600' : 'bg-rose-600'}`} />
                       <div>
@@ -1048,10 +1028,8 @@ export default function Financials({ appConfig, selectedBranch }: { appConfig?: 
                       </div>
                     </div>
 
-                    {/* Right: Channel badge + Amount + Edit/Delete */}
                     <div className="flex items-center gap-3 sm:gap-4">
                       
-                      {/* Channel Badge (ONEPAY / CASH / LDB) */}
                       <span className={`px-2.5 py-0.5 rounded-md text-[9px] font-serif uppercase tracking-wider font-semibold ${
                         ch === 'Cash' 
                           ? 'bg-emerald-50 text-emerald-800 border border-emerald-200/60' 
@@ -1062,14 +1040,12 @@ export default function Financials({ appConfig, selectedBranch }: { appConfig?: 
                         {ch.toUpperCase()}
                       </span>
 
-                      {/* Currency Amount (+ / -) */}
                       <div className="text-right min-w-[110px]">
                         <p className={`text-xs font-serif font-bold ${isInc ? 'text-emerald-700' : 'text-rose-700'}`}>
                           {showPrivacy ? '••••••' : `${isInc ? '+' : '-'}${Number(tx.amount).toLocaleString()} ₭`}
                         </p>
                       </div>
 
-                      {/* Edit & Delete Buttons */}
                       <div className="flex items-center gap-1">
                         <button 
                           onClick={() => startEdit(tx)} 
@@ -1104,8 +1080,21 @@ export default function Financials({ appConfig, selectedBranch }: { appConfig?: 
 
       </div>
 
-      {/* Edit & Delete Verification PIN Modals */}
+      {/* Edit & Delete Verification PIN Modals (ປິດຄົບຖ້ວນ ບໍ່ມີຕັດຂາດ) */}
       <PinModal
         isOpen={showEditPinModal}
-        onClose={() => setShowEditPinModal(fa
-                                          
+        onClose={() => setShowEditPinModal(false)}
+        correctPin={appConfig?.masterApprovalPin}
+        onSuccess={handleEditConfirmed}
+      />
+
+      <PinModal
+        isOpen={showDeletePinModal}
+        onClose={() => setShowDeletePinModal(false)}
+        correctPin={appConfig?.masterApprovalPin}
+        onSuccess={handleDeleteConfirmed}
+      />
+
+    </div>
+  );
+}
