@@ -1,34 +1,15 @@
-/* 1. ດຶງ Font ຈາກ Google Fonts ໂດຍກົງ */
-@import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Noto+Sans+Lao:wght@300;400;500;600;700&display=swap');
-
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* 2. ບັງຄັບໃຫ້ class "font-serif" ທຸກບ່ອນໃນເວັບໃຊ້ DM Serif Display ທັນທີ */
+/* ຕັ້ງຄ່າ Font ໂດຍກົງ ບໍ່ຜ່ານ @import url */
 .font-serif {
-  font-family: 'DM Serif Display', Georgia, serif !important;
+  font-family: 'DM Serif Display', Georgia, serif;
 }
 
-/* 3. ບັງຄັບໃຫ້ພາສາລາວ ແລະ ຕົວໜັງສືທົ່ວໄປໃຊ້ Noto Sans Lao */
-body, .font-sans {
-  font-family: 'Noto Sans Lao', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-}
-
-/* ຕົບແຕ່ງ Scrollbar ໃຫ້ບາງລຽບຫຼູ */
-::-webkit-scrollbar {
-  width: 5px;
-  height: 5px;
-}
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-::-webkit-scrollbar-thumb {
-  background: #00183920;
-  border-radius: 9999px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: #00183940;
+body {
+  font-family: 'Noto Sans Lao', system-ui, -apple-system, sans-serif;
+  margin: 0;
+  padding: 0;
+  background-color: #f1f5f9;
 }
