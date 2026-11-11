@@ -9,7 +9,7 @@ import {
   Plus, Trash2, Search, Download, 
   List, Receipt, Image as ImageIcon, Upload, Eye, X, Truck,
   Calendar, ChevronLeft, ChevronRight,
-  Store, Edit3, ImagePlus
+  Store, Edit3, ImagePlus, CheckCircle2
 } from 'lucide-react';
 import { format, subMonths, addMonths } from 'date-fns';
 import * as XLSX from 'xlsx';
@@ -222,7 +222,6 @@ export default function Suppliers() {
     setCurrentDate(prev => addMonths(prev, 1));
   };
 
-  // ບີບອັດຮູບໃບບິນ
   const processImageFile = (blobOrFile: Blob | File) => {
     if (!blobOrFile) return;
     const reader = new FileReader();
@@ -243,7 +242,6 @@ export default function Suppliers() {
     reader.readAsDataURL(blobOrFile);
   };
 
-  // ບີບອັດຮູບສິນຄ້າ
   const processProductImageFile = (blobOrFile: Blob | File) => {
     if (!blobOrFile) return;
     const reader = new FileReader();
@@ -263,7 +261,6 @@ export default function Suppliers() {
     reader.readAsDataURL(blobOrFile);
   };
 
-  // Ctrl + V Paste Listener
   useEffect(() => {
     const handlePaste = (e: ClipboardEvent) => {
       const clipboard = e.clipboardData;
@@ -530,62 +527,62 @@ export default function Suppliers() {
   return (
     <div className="min-h-screen bg-slate-100/90 text-slate-800 p-4 sm:p-6 space-y-6">
 
-      {/* Header Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 sm:p-6 bg-white rounded-3xl border border-slate-200/90 shadow-sm">
-        <div className="flex items-center gap-3.5">
-          <div className="w-12 h-12 rounded-2xl bg-[#001839]/5 text-[#001839] flex items-center justify-center border border-[#001839]/10">
-            <Truck className="w-6 h-6 animate-pulse" />
+      {/* 1. Header Bar (Luxury Editorial Bar) */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 sm:p-6 bg-white rounded-3xl border border-slate-200/80 shadow-xs">
+        <div className="flex items-center gap-4">
+          <div className="w-12 h-12 rounded-2xl bg-[#001839]/5 text-[#001839] flex items-center justify-center border border-[#001839]/10 shadow-xs">
+            <Truck strokeWidth={1.4} className="w-6 h-6 animate-pulse" />
           </div>
           <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-base sm:text-lg font-serif tracking-tight text-[#001839]">
+            <div className="flex items-center gap-2.5">
+              <h2 className="text-xl sm:text-2xl font-serif tracking-tight text-[#001839]">
                 {i18n.language === 'la' ? 'ລະບົບຈັດຊື້ & ຜູ້ສະໜອງ (Supplier Procurement)' : 'Supplier Procurement Desk'}
               </h2>
-              <span className="px-2 py-0.5 rounded-full bg-[#001839]/5 text-[#001839] text-[9px] font-black uppercase tracking-wider">
+              <span className="px-2.5 py-0.5 rounded-full bg-[#001839] text-white text-[9px] font-serif uppercase tracking-[0.2em]">
                 Luxury Editorial
               </span>
             </div>
-            <p className="text-[11px] text-slate-500 font-bold uppercase tracking-wider mt-0.5">
-              {products.length + ' ສິນຄ້າໃນຄັງ • ສະແດງເດືອນ ' + selectedLedgerMonth + ' (' + sortedSupplierPrices.length + ' ບິນ)'}
+            <p className="text-xs text-slate-500 font-sans mt-0.5">
+              {products.length} ສິນຄ້າໃນຄັງ • <span className="font-serif">Month {selectedLedgerMonth}</span> ({sortedSupplierPrices.length} ໃບບິນ)
             </p>
           </div>
         </div>
 
         {/* ປຸ່ມຈັດການຮ້ານຄ້າ & ສິນຄ້າ */}
-        <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex items-center gap-2.5 flex-wrap">
           <button
             onClick={() => setShowSupplierModal(true)}
-            className="px-4 py-2 bg-slate-50 hover:bg-slate-100 text-[#001839] rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer transition-all border border-slate-200"
+            className="px-4 py-2 bg-slate-50 hover:bg-slate-100 text-[#001839] rounded-xl text-xs font-serif uppercase tracking-wider flex items-center gap-2 cursor-pointer transition-all border border-slate-200 shadow-xs"
           >
-            <Store className="w-3.5 h-3.5 text-[#001839]" />
-            <span>ຈັດການຮ້ານຄ້າ ({suppliersList.length})</span>
+            <Store strokeWidth={1.4} className="w-4 h-4 text-[#001839]" />
+            <span>Supplier Manager ({suppliersList.length})</span>
           </button>
 
           <button 
             onClick={() => setShowProductManager(true)}
-            className="px-4 py-2 bg-[#001839] hover:bg-[#00285d] text-white rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 shadow-md cursor-pointer transition-all"
+            className="px-4 py-2 bg-[#001839] hover:bg-[#00285d] text-white rounded-xl text-xs font-serif uppercase tracking-wider flex items-center gap-2 shadow-sm cursor-pointer transition-all"
           >
-            <List className="w-3.5 h-3.5" />
-            <span>ຈັດການສິນຄ້າ ({products.length})</span>
+            <List strokeWidth={1.4} className="w-4 h-4" />
+            <span>Product Manager ({products.length})</span>
           </button>
         </div>
       </div>
 
-      {/* 2 CARDS ສູງເທົ່າກັນ (Grid 12 ຖັນ) */}
+      {/* 2. Main Two-Column Editorial Layout (Items-stretch) */}
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 items-stretch">
 
-        {/* LEFT: Bill Entry Form (5 ຖັນ) */}
+        {/* ================= LEFT: Bill Entry Form (5 Cols) ================= */}
         <div className="xl:col-span-5 flex flex-col h-full">
-          <div className="bg-white p-5 sm:p-6 rounded-3xl border border-slate-200/90 shadow-sm flex flex-col h-full space-y-4">
+          <div className="bg-white p-6 rounded-3xl border border-slate-200/80 shadow-xs flex flex-col h-full space-y-5">
             
-            <div className="flex justify-between items-start border-b border-slate-100 pb-3.5">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-4">
               <div>
-                <span className="px-2.5 py-0.5 bg-[#001839]/5 text-[#001839] rounded-full text-[9px] font-black uppercase tracking-wider">
-                  {entryMode === 'batch' ? 'MULTI-ITEM BILL' : 'SINGLE ENTRY'}
+                <span className="px-2.5 py-0.5 bg-[#001839]/5 text-[#001839] rounded-full text-[9px] font-serif uppercase tracking-[0.2em]">
+                  {entryMode === 'batch' ? 'Multi-Item Bill' : 'Single Entry'}
                 </span>
-                <h3 className="text-sm font-serif tracking-tight text-[#001839] uppercase mt-1 flex items-center gap-2">
-                  <Receipt className="w-4 h-4 text-emerald-600" />
-                  <span>ບັນທຶກໃບບິນຈັດຊື້</span>
+                <h3 className="text-base font-serif tracking-tight text-[#001839] uppercase mt-1 flex items-center gap-2">
+                  <Receipt strokeWidth={1.4} className="w-4 h-4 text-emerald-600" />
+                  <span>ບັນທຶກໃບບິນຈັດຊື້ (Procurement Entry)</span>
                 </h3>
               </div>
 
@@ -594,11 +591,11 @@ export default function Suppliers() {
                   type="button"
                   onClick={() => setEntryMode('batch')}
                   className={
-                    "px-3 py-1 text-[10px] font-black uppercase rounded-lg cursor-pointer transition-all " +
-                    (entryMode === 'batch' ? "bg-[#001839] text-white shadow-sm" : "text-slate-500 hover:text-slate-800")
+                    "px-3 py-1 text-[11px] font-serif uppercase tracking-wider rounded-lg cursor-pointer transition-all " +
+                    (entryMode === 'batch' ? "bg-[#001839] text-white shadow-xs" : "text-slate-500 hover:text-slate-800")
                   }
                 >
-                  ຫຼາຍລາຍການ
+                  Batch Items
                 </button>
                 <button
                   type="button"
@@ -607,41 +604,41 @@ export default function Suppliers() {
                     if (billItems.length > 1) setBillItems([billItems[0]]);
                   }}
                   className={
-                    "px-3 py-1 text-[10px] font-black uppercase rounded-lg cursor-pointer transition-all " +
-                    (entryMode === 'single' ? "bg-[#001839] text-white shadow-sm" : "text-slate-500 hover:text-slate-800")
+                    "px-3 py-1 text-[11px] font-serif uppercase tracking-wider rounded-lg cursor-pointer transition-all " +
+                    (entryMode === 'single' ? "bg-[#001839] text-white shadow-xs" : "text-slate-500 hover:text-slate-800")
                   }
                 >
-                  ລາຍການດ່ຽວ
+                  Single Item
                 </button>
               </div>
             </div>
 
-            <form onSubmit={handleSaveBillBatch} className="space-y-3.5 flex-1 flex flex-col justify-between">
-              <div className="space-y-3">
+            <form onSubmit={handleSaveBillBatch} className="space-y-4 flex-1 flex flex-col justify-between">
+              <div className="space-y-4">
                 
-                {/* ກ່ອງອັບໂຫຼດຮູບໃບບິນ */}
+                {/* Receipt Image Upload (Dropzone) */}
                 <div 
                   onDragOver={e => { e.preventDefault(); setIsDragging(true); }}
                   onDragLeave={() => setIsDragging(false)}
                   onDrop={e => { e.preventDefault(); setIsDragging(false); if (e.dataTransfer.files?.[0]) processImageFile(e.dataTransfer.files[0]); }}
                   className={
-                    "p-3 rounded-2xl border-2 border-dashed transition-all " +
-                    (isDragging ? "border-[#001839] bg-slate-50" : "border-slate-300 bg-slate-50/70")
+                    "p-4 rounded-2xl border border-dashed transition-all " +
+                    (isDragging ? "border-[#001839] bg-slate-50" : "border-slate-300 bg-slate-50/60 hover:bg-slate-50")
                   }
                 >
-                  <div className="flex justify-between items-center mb-1">
-                    <span className="text-[9.5px] font-black uppercase text-slate-500 flex items-center gap-1.5">
-                      <ImageIcon className="w-3.5 h-3.5 text-blue-600" />
-                      <span>Receipt Image (Drop ຫຼື Ctrl+V ໄດ້ເລີຍ)</span>
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="text-[11px] font-serif tracking-wider uppercase text-[#001839] flex items-center gap-1.5">
+                      <ImageIcon strokeWidth={1.4} className="w-4 h-4 text-[#001839]" />
+                      <span>Receipt Image (Drop / Ctrl + V)</span>
                     </span>
                     {billImageBase64 && (
-                      <button type="button" onClick={() => setBillImageBase64('')} className="text-[9px] font-black text-rose-500 uppercase cursor-pointer">Remove</button>
+                      <button type="button" onClick={() => setBillImageBase64('')} className="text-[10px] font-serif text-rose-500 uppercase tracking-widest cursor-pointer hover:underline">Remove</button>
                     )}
                   </div>
 
                   {billImageBase64 ? (
-                    <div className="relative rounded-xl overflow-hidden max-h-32 bg-slate-100 flex items-center justify-center">
-                      <img src={billImageBase64} alt="Receipt" className="w-full h-32 object-contain cursor-pointer" onClick={() => setPreviewImageUrl(billImageBase64)} />
+                    <div className="relative rounded-xl overflow-hidden max-h-36 bg-slate-100 flex items-center justify-center border border-slate-200">
+                      <img src={billImageBase64} alt="Receipt" className="w-full h-36 object-contain cursor-pointer" onClick={() => setPreviewImageUrl(billImageBase64)} />
                     </div>
                   ) : (
                     <div>
@@ -653,50 +650,51 @@ export default function Suppliers() {
                         className="hidden" 
                         id="supplier-upload" 
                       />
-                      <label htmlFor="supplier-upload" className="w-full py-4 rounded-xl border border-slate-200 flex flex-col items-center justify-center gap-1 cursor-pointer text-slate-500 hover:bg-slate-100 transition-all bg-white">
-                        <Upload className="w-4 h-4 text-emerald-600" />
-                        <span className="text-xs font-bold text-slate-700">ອັບໂຫຼດຮູບໃບບິນ (Drop / Ctrl+V)</span>
+                      <label htmlFor="supplier-upload" className="w-full py-4 rounded-xl border border-slate-200 flex flex-col items-center justify-center gap-1.5 cursor-pointer text-slate-500 hover:bg-white transition-all bg-white shadow-xs">
+                        <Upload strokeWidth={1.4} className="w-5 h-5 text-emerald-600" />
+                        <span className="text-xs font-serif uppercase tracking-wider text-[#001839]">ອັບໂຫຼດຮູບໃບບິນ (Drop / Ctrl+V)</span>
+                        <span className="text-[10px] text-slate-400">ຮອງຮັບການວາງຮູບພາບດ່ວນຈາກ Clipboard</span>
                       </label>
                     </div>
                   )}
                 </div>
 
                 {/* Date, Time, Bill No */}
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-3 gap-2.5">
                   <div>
-                    <label className="text-[9px] font-black uppercase text-slate-500">Date</label>
+                    <label className="text-[10px] font-serif uppercase tracking-wider text-[#001839] mb-1 block">Date</label>
                     <input 
                       type="date"
                       required
-                      className="w-full h-9 px-2 rounded-xl bg-slate-50 border border-slate-200 text-xs font-bold text-[#001839]"
+                      className="w-full h-9 px-2 rounded-xl bg-slate-50 border border-slate-200 text-xs font-mono font-medium text-[#001839] focus:outline-none focus:border-[#001839]"
                       value={billDate}
                       onChange={e => setBillDate(e.target.value)}
                     />
                   </div>
                   <div>
-                    <label className="text-[9px] font-black uppercase text-slate-500">Time</label>
+                    <label className="text-[10px] font-serif uppercase tracking-wider text-[#001839] mb-1 block">Time</label>
                     <input 
                       type="time"
                       required
-                      className="w-full h-9 px-2 rounded-xl bg-slate-50 border border-slate-200 text-xs font-bold text-[#001839]"
+                      className="w-full h-9 px-2 rounded-xl bg-slate-50 border border-slate-200 text-xs font-mono font-medium text-[#001839] focus:outline-none focus:border-[#001839]"
                       value={billTime}
                       onChange={e => setBillTime(e.target.value)}
                     />
                   </div>
                   <div>
-                    <label className="text-[9px] font-black uppercase text-slate-500">Bill No.</label>
-                    <div className="w-full h-9 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 font-mono font-black text-xs flex items-center justify-center">
+                    <label className="text-[10px] font-serif uppercase tracking-wider text-[#001839] mb-1 block">Bill No.</label>
+                    <div className="w-full h-9 rounded-xl bg-emerald-50/80 border border-emerald-200 text-emerald-700 font-serif text-xs font-semibold flex items-center justify-center">
                       {generatedBillNo}
                     </div>
                   </div>
                 </div>
 
                 {/* Supplier, Category, Payment */}
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-3 gap-2.5">
                   <div>
-                    <label className="text-[9px] font-black uppercase text-slate-500">Supplier</label>
+                    <label className="text-[10px] font-serif uppercase tracking-wider text-[#001839] mb-1 block">Supplier</label>
                     <select 
-                      className="w-full h-9 px-2 rounded-xl bg-slate-50 border border-slate-200 text-xs font-bold text-[#001839] cursor-pointer"
+                      className="w-full h-9 px-2 rounded-xl bg-slate-50 border border-slate-200 text-xs font-medium text-[#001839] cursor-pointer focus:outline-none focus:border-[#001839]"
                       value={supplier}
                       onChange={e => setSupplier(e.target.value)}
                     >
@@ -706,24 +704,24 @@ export default function Suppliers() {
                     </select>
                   </div>
                   <div>
-                    <label className="text-[9px] font-black uppercase text-slate-500">Category</label>
+                    <label className="text-[10px] font-serif uppercase tracking-wider text-[#001839] mb-1 block">Category</label>
                     <select 
-                      className="w-full h-9 px-2 rounded-xl bg-slate-50 border border-slate-200 text-xs font-bold text-[#001839] cursor-pointer"
+                      className="w-full h-9 px-2 rounded-xl bg-slate-50 border border-slate-200 text-xs font-serif text-[#001839] cursor-pointer focus:outline-none focus:border-[#001839]"
                       value={category}
                       onChange={e => setCategory(e.target.value as any)}
                     >
-                      <option value="purchasing">Purchasing</option>
-                      <option value="rental">Rental</option>
-                      <option value="salary">Salary</option>
+                      <option value="purchasing">Purchasing (ຈັດຊື້)</option>
+                      <option value="rental">Rental (ຄ່າເຊົ່າ)</option>
+                      <option value="salary">Salary (ເງິນເດືອນ)</option>
                       <option value="operation">Operation</option>
                       <option value="admin">Admin</option>
                       <option value="other">Other</option>
                     </select>
                   </div>
                   <div>
-                    <label className="text-[9px] font-black uppercase text-rose-600">Payment</label>
+                    <label className="text-[10px] font-serif uppercase tracking-wider text-rose-600 mb-1 block">Payment</label>
                     <select 
-                      className="w-full h-9 px-2 rounded-xl bg-rose-50 border border-rose-200 text-xs font-bold text-rose-700 cursor-pointer"
+                      className="w-full h-9 px-2 rounded-xl bg-rose-50/70 border border-rose-200 text-xs font-serif text-rose-800 cursor-pointer focus:outline-none focus:border-rose-400"
                       value={paymentMethod}
                       onChange={e => setPaymentMethod(e.target.value as any)}
                     >
@@ -735,9 +733,9 @@ export default function Suppliers() {
                 </div>
 
                 {/* Currency & Exchange Rate */}
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-2 gap-2.5">
                   <div>
-                    <label className="text-[9px] font-black uppercase text-slate-500">Currency</label>
+                    <label className="text-[10px] font-serif uppercase tracking-wider text-[#001839] mb-1 block">Currency</label>
                     <select
                       value={currency}
                       onChange={e => {
@@ -745,7 +743,7 @@ export default function Suppliers() {
                         if (e.target.value === 'LAK') setExchangeRate(1);
                         else if (e.target.value === 'THB') setExchangeRate(650);
                       }}
-                      className="w-full h-9 px-2 rounded-xl bg-slate-50 border border-slate-200 text-xs font-bold text-[#001839] cursor-pointer"
+                      className="w-full h-9 px-2 rounded-xl bg-slate-50 border border-slate-200 text-xs font-serif text-[#001839] cursor-pointer focus:outline-none focus:border-[#001839]"
                     >
                       <option value="LAK">LAK (ກີບ)</option>
                       <option value="THB">THB (ບາດ)</option>
@@ -753,29 +751,29 @@ export default function Suppliers() {
                   </div>
                   {currency !== 'LAK' && (
                     <div>
-                      <label className="text-[9px] font-black uppercase text-slate-500">Rate</label>
+                      <label className="text-[10px] font-serif uppercase tracking-wider text-[#001839] mb-1 block">Exchange Rate</label>
                       <input
                         type="number"
                         step="any"
                         value={exchangeRate}
                         onChange={e => setExchangeRate(parseFloat(e.target.value) || 1)}
-                        className="w-full h-9 px-2 rounded-xl bg-slate-50 border border-slate-200 text-xs font-bold font-mono text-[#001839]"
+                        className="w-full h-9 px-2 rounded-xl bg-slate-50 border border-slate-200 text-xs font-mono font-medium text-[#001839] focus:outline-none focus:border-[#001839]"
                       />
                     </div>
                   )}
                 </div>
 
-                {/* Items in Bill */}
+                {/* Items in Bill Section */}
                 <div className="space-y-2 pt-1">
                   <div className="flex justify-between items-center">
-                    <label className="text-[9.5px] font-black uppercase text-slate-500">Items in this Bill</label>
+                    <label className="text-[11px] font-serif uppercase tracking-wider text-[#001839]">Items in this Bill</label>
                     {entryMode === 'batch' && (
                       <button
                         type="button"
                         onClick={addNewItemRow}
-                        className="px-2 py-0.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-lg text-[9.5px] font-black uppercase flex items-center gap-1 cursor-pointer"
+                        className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded-lg text-[10px] font-serif uppercase tracking-wider flex items-center gap-1 cursor-pointer transition-all border border-emerald-200/60"
                       >
-                        <Plus className="w-3 h-3" /> ເພີ່ມລາຍການ
+                        <Plus strokeWidth={1.4} className="w-3 h-3" /> Add Item
                       </button>
                     )}
                   </div>
@@ -785,24 +783,24 @@ export default function Suppliers() {
                       const selectedProd = products.find(p => p.id === item.productId);
 
                       return (
-                        <div key={item.id} className="p-3 rounded-2xl bg-slate-50 border border-slate-200 space-y-2 relative">
+                        <div key={item.id} className="p-3.5 rounded-2xl bg-slate-50/80 border border-slate-200 space-y-2 relative">
                           {billItems.length > 1 && (
                             <button
                               type="button"
                               onClick={() => removeItemRow(index)}
-                              className="absolute top-2 right-2 text-rose-400 hover:text-rose-600 p-0.5 cursor-pointer"
+                              className="absolute top-2.5 right-2.5 text-slate-400 hover:text-rose-500 p-0.5 cursor-pointer transition-all"
                             >
-                              <Trash2 className="w-3.5 h-3.5" />
+                              <Trash2 strokeWidth={1.4} className="w-3.5 h-3.5" />
                             </button>
                           )}
 
                           <div className="space-y-1 relative pr-6">
-                            <label className="text-[8.5px] font-black uppercase text-slate-400">Product #{index + 1}</label>
+                            <label className="text-[9px] font-serif uppercase tracking-wider text-slate-500">Product #{index + 1}</label>
                             <input 
                               type="text"
                               required
                               className={
-                                "w-full h-8 px-2.5 pr-8 rounded-xl bg-white border text-xs font-bold outline-none cursor-pointer text-[#001839] " +
+                                "w-full h-8 px-2.5 pr-8 rounded-xl bg-white border text-xs font-sans outline-none cursor-pointer text-[#001839] " +
                                 (!item.productId && item.productSearch ? "border-amber-400" : "border-slate-200")
                               }
                               placeholder="ຄົ້ນຫາຊື່ສິນຄ້າ..."
@@ -811,7 +809,7 @@ export default function Suppliers() {
                               onClick={() => updateItemRow(index, { isDropdownOpen: true })}
                               onChange={(e) => updateItemRow(index, { productSearch: e.target.value, isDropdownOpen: true, productId: '' })}
                             />
-                            <Search className="absolute right-8 top-6 w-3 h-3 text-slate-400 pointer-events-none" />
+                            <Search strokeWidth={1.4} className="absolute right-8 top-6 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
 
                             {item.isDropdownOpen && (
                               <div className="absolute z-50 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-2xl shadow-xl max-h-48 overflow-y-auto">
@@ -821,7 +819,7 @@ export default function Suppliers() {
                                     <button
                                       key={p.id}
                                       type="button"
-                                      className="w-full text-left p-2 hover:bg-slate-50 border-b border-slate-100 flex items-center justify-between cursor-pointer"
+                                      className="w-full text-left p-2.5 hover:bg-slate-50 border-b border-slate-100 flex items-center justify-between cursor-pointer"
                                       onMouseDown={(e) => {
                                         e.preventDefault();
                                         updateItemRow(index, {
@@ -832,54 +830,54 @@ export default function Suppliers() {
                                         });
                                       }}
                                     >
-                                      <div className="flex items-center gap-2">
+                                      <div className="flex items-center gap-2.5">
                                         {p.imageUrl ? (
-                                          <img src={p.imageUrl} alt="" className="w-6 h-6 object-cover rounded-md" />
+                                          <img src={p.imageUrl} alt="" className="w-7 h-7 object-cover rounded-lg border border-slate-100" />
                                         ) : (
-                                          <div className="w-6 h-6 rounded-md bg-slate-200 flex items-center justify-center text-[9px] font-bold text-slate-600">
+                                          <div className="w-7 h-7 rounded-lg bg-slate-100 flex items-center justify-center text-[10px] font-serif text-[#001839]">
                                             {p.name.slice(0, 1)}
                                           </div>
                                         )}
-                                        <span className="text-xs font-bold text-slate-800">{p.name}</span>
+                                        <span className="text-xs font-medium text-slate-800">{p.name}</span>
                                       </div>
-                                      <span className="text-[9px] text-slate-400 uppercase">{p.unit || 'UNIT'}</span>
+                                      <span className="text-[10px] font-serif text-slate-400 uppercase">{p.unit || 'UNIT'}</span>
                                     </button>
                                 ))}
                               </div>
                             )}
                           </div>
 
-                          <div className="grid grid-cols-12 gap-1.5">
+                          <div className="grid grid-cols-12 gap-2">
                             <div className="col-span-6">
-                              <label className="text-[8px] font-black uppercase text-slate-400">Price ({currency})</label>
+                              <label className="text-[9px] font-serif uppercase tracking-wider text-slate-500">Price ({currency})</label>
                               <input 
                                 type="text"
                                 required
-                                placeholder="ລາຄາ"
-                                className="w-full h-8 px-2 rounded-xl bg-white border border-slate-200 text-xs font-mono font-bold text-[#001839]"
+                                placeholder="0"
+                                className="w-full h-8 px-2.5 rounded-xl bg-white border border-slate-200 text-xs font-mono font-medium text-[#001839]"
                                 value={item.displayPrice}
                                 onChange={e => handleItemPriceChange(index, e.target.value)}
                               />
                             </div>
                             <div className="col-span-3">
-                              <label className="text-[8px] font-black uppercase text-slate-400">Qty</label>
+                              <label className="text-[9px] font-serif uppercase tracking-wider text-slate-500">Qty</label>
                               <input 
                                 type="number"
                                 min="1"
                                 step="any"
                                 required
-                                placeholder="ຈຳນວນ"
-                                className="w-full h-8 px-1.5 rounded-xl bg-white border border-slate-200 text-xs font-mono font-bold text-center text-[#001839]"
+                                placeholder="1"
+                                className="w-full h-8 px-1.5 rounded-xl bg-white border border-slate-200 text-xs font-mono font-medium text-center text-[#001839]"
                                 value={item.quantity || ''}
                                 onChange={e => updateItemRow(index, { quantity: parseFloat(e.target.value) || 1 })}
                               />
                             </div>
                             <div className="col-span-3">
-                              <label className="text-[8px] font-black uppercase text-slate-400">Unit</label>
+                              <label className="text-[9px] font-serif uppercase tracking-wider text-slate-500">Unit</label>
                               <input 
                                 type="text"
-                                placeholder="ຫົວໜ່ວຍ"
-                                className="w-full h-8 px-1.5 rounded-xl bg-white border border-slate-200 text-xs font-bold text-center uppercase text-[#001839]"
+                                placeholder="UNIT"
+                                className="w-full h-8 px-1.5 rounded-xl bg-white border border-slate-200 text-xs font-serif uppercase text-center text-[#001839]"
                                 value={item.unit}
                                 onChange={e => updateItemRow(index, { unit: e.target.value })}
                               />
@@ -892,54 +890,55 @@ export default function Suppliers() {
                 </div>
 
                 <div>
-                  <label className="text-[9px] font-black uppercase text-slate-500">Remark (ໝາຍເຫດ)</label>
+                  <label className="text-[10px] font-serif uppercase tracking-wider text-[#001839] mb-1 block">Remark (ໝາຍເຫດ)</label>
                   <input 
                     type="text"
-                    placeholder="ໝາຍເຫດ..."
-                    className="w-full h-8 px-3 rounded-xl bg-slate-50 border border-slate-200 text-xs text-[#001839]"
+                    placeholder="ລາຍລະອຽດ ຫຼື ໝາຍເຫດເພີ່ມເຕີມ..."
+                    className="w-full h-9 px-3 rounded-xl bg-slate-50 border border-slate-200 text-xs text-[#001839] focus:outline-none focus:border-[#001839]"
                     value={billRemark}
                     onChange={e => setBillRemark(e.target.value)}
                   />
                 </div>
               </div>
 
-              {/* Total & Submit Button */}
-              <div className="space-y-3 pt-2">
-                <div className="p-3 bg-[#001839] text-white rounded-2xl flex justify-between items-center shadow-md">
+              {/* Total Card & Submit Button */}
+              <div className="space-y-3 pt-3">
+                <div className="p-4 bg-[#001839] text-white rounded-2xl flex justify-between items-center shadow-sm">
                   <div>
-                    <p className="text-[9px] font-bold uppercase tracking-widest text-slate-300">Total Cost (LAK)</p>
-                    <p className="text-base font-black font-mono">{Math.round(grandTotalLAK).toLocaleString()} ₭</p>
+                    <p className="text-[10px] font-serif uppercase tracking-[0.2em] text-slate-300">Total Cost (LAK)</p>
+                    <p className="text-xl font-serif tracking-tight mt-0.5">{Math.round(grandTotalLAK).toLocaleString()} ₭</p>
                   </div>
                 </div>
 
                 <button 
                   type="submit" 
                   disabled={saveLoading}
-                  className="w-full h-11 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs uppercase tracking-wider rounded-2xl shadow-md cursor-pointer transition-all disabled:opacity-50"
+                  className="w-full h-11 bg-[#001839] hover:bg-[#00285d] text-white font-serif text-xs uppercase tracking-widest rounded-2xl shadow-sm cursor-pointer transition-all disabled:opacity-50 flex items-center justify-center gap-2"
                 >
-                  {saveLoading ? 'SAVING...' : 'ບັນທຶກໃບບິນຈັດຊື້ (' + generatedBillNo + ')'}
+                  <CheckCircle2 strokeWidth={1.4} className="w-4 h-4 text-emerald-400" />
+                  <span>{saveLoading ? 'Processing...' : 'ບັນທຶກໃບບິນຈັດຊື້ (' + generatedBillNo + ')'}</span>
                 </button>
               </div>
             </form>
           </div>
         </div>
 
-        {/* RIGHT: Active Procurement Ledger (7 ຖັນ) */}
+        {/* ================= RIGHT: Active Procurement Ledger (7 Cols) ================= */}
         <div className="xl:col-span-7 flex flex-col h-full space-y-4">
           
-          <div className="bg-white rounded-3xl border border-slate-200/90 shadow-sm overflow-hidden flex flex-col h-full">
+          <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs overflow-hidden flex flex-col h-full">
             
-            {/* Header ຂອງຕາຕະລາງ + ປະຕິທິນ */}
-            <div className="p-4 sm:p-5 border-b border-slate-100 space-y-3 shrink-0">
+            {/* Header + Month Switcher */}
+            <div className="p-5 border-b border-slate-100 space-y-3.5 shrink-0">
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
                 <div>
-                  <h3 className="text-xs font-serif tracking-tight text-[#001839] uppercase flex items-center gap-2">
-                    <Receipt className="w-4 h-4 text-emerald-600" />
-                    <span>ACTIVE PROCUREMENT LEDGER</span>
+                  <h3 className="text-base font-serif tracking-tight text-[#001839] uppercase flex items-center gap-2">
+                    <Receipt strokeWidth={1.4} className="w-4 h-4 text-emerald-600" />
+                    <span>Active Procurement Ledger</span>
                   </h3>
-                  <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">
+                  <span className="text-[11px] font-sans text-slate-500">
                     {'ເດືອນ ' + selectedLedgerMonth + ' • ລວມ: '}
-                    <strong className="text-emerald-600 font-mono text-xs">{Math.round(ledgerTotalLAK).toLocaleString() + " ₭"}</strong>
+                    <strong className="text-emerald-700 font-serif text-sm tracking-tight">{Math.round(ledgerTotalLAK).toLocaleString() + " ₭"}</strong>
                   </span>
                 </div>
 
@@ -961,33 +960,34 @@ export default function Suppliers() {
                   const workbook = XLSX.utils.book_new();
                   XLSX.utils.book_append_sheet(workbook, worksheet, "Suppliers");
                   XLSX.writeFile(workbook, "Suppliers_" + selectedLedgerMonth + ".xlsx");
-                }} className="px-3.5 py-1.5 bg-slate-50 hover:bg-slate-100 rounded-xl text-xs font-bold uppercase tracking-wider text-[#001839] cursor-pointer transition-all border border-slate-200">
-                  <Download className="w-3.5 h-3.5 inline mr-1 text-[#001839]" /> Excel
+                }} className="px-3.5 py-1.5 bg-slate-50 hover:bg-slate-100 rounded-xl text-xs font-serif uppercase tracking-wider text-[#001839] cursor-pointer transition-all border border-slate-200 flex items-center gap-1.5">
+                  <Download strokeWidth={1.4} className="w-3.5 h-3.5 text-[#001839]" />
+                  <span>Export Excel</span>
                 </button>
               </div>
 
-              {/* ປຸ່ມເລື່ອນເດືອນ */}
+              {/* Month Controls */}
               <div className="flex items-center justify-between pt-2 border-t border-slate-100">
-                <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-2">
                   <button
                     onClick={handlePrevMonth}
-                    className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 cursor-pointer"
+                    className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 cursor-pointer transition"
                     title="ເດືອນກ່ອນໜ້າ"
                   >
-                    <ChevronLeft className="w-3.5 h-3.5" />
+                    <ChevronLeft strokeWidth={1.4} className="w-4 h-4" />
                   </button>
 
-                  <div className="flex items-center gap-1.5 px-3 py-1 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-[#001839]">
-                    <Calendar className="w-3.5 h-3.5 text-indigo-600" />
+                  <div className="flex items-center gap-2 px-3.5 py-1 bg-slate-50 border border-slate-200 rounded-xl text-xs font-serif text-[#001839]">
+                    <Calendar strokeWidth={1.4} className="w-3.5 h-3.5 text-[#001839]" />
                     <span>{LAO_MONTHS[currentDate.getMonth()] + ' ' + currentDate.getFullYear()}</span>
                   </div>
 
                   <button
                     onClick={handleNextMonth}
-                    className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 cursor-pointer"
+                    className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 cursor-pointer transition"
                     title="ເດືອນຖັດໄປ"
                   >
-                    <ChevronRight className="w-3.5 h-3.5" />
+                    <ChevronRight strokeWidth={1.4} className="w-4 h-4" />
                   </button>
 
                   <button
@@ -995,44 +995,44 @@ export default function Suppliers() {
                       setIsLedgerLoading(true);
                       setCurrentDate(new Date());
                     }}
-                    className="px-2.5 py-1 text-[10px] font-black uppercase rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 ml-1 cursor-pointer"
+                    className="px-2.5 py-1 text-[10px] font-serif uppercase tracking-wider rounded-lg bg-slate-100 hover:bg-slate-200 text-[#001839] cursor-pointer transition"
                   >
-                    ເດືອນນີ້
+                    Current Month
                   </button>
                 </div>
 
-                <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">
-                  {'ໜ້າ ' + currentPage + ' / ' + totalPages + ' (' + sortedSupplierPrices.length + ' ລາຍການ)'}
+                <span className="text-[11px] font-serif text-slate-400 uppercase tracking-wider">
+                  {'Page ' + currentPage + ' / ' + totalPages + ' (' + sortedSupplierPrices.length + ' Items)'}
                 </span>
               </div>
             </div>
 
-            {/* ຕາຕະລາງ */}
+            {/* Table Area */}
             <div className="overflow-x-auto flex-1 relative bg-white">
               {isLedgerLoading ? (
-                <div className="absolute inset-0 bg-white/80 backdrop-blur-[2px] flex flex-col items-center justify-center gap-2 z-20">
+                <div className="absolute inset-0 bg-white/80 backdrop-blur-xs flex flex-col items-center justify-center gap-2 z-20">
                   <div className="w-8 h-8 border-2 border-[#001839]/20 border-t-[#001839] rounded-full animate-spin" />
-                  <p className="text-xs font-black uppercase text-slate-600">Loading...</p>
+                  <p className="text-xs font-serif uppercase tracking-widest text-[#001839]">Loading Ledger...</p>
                 </div>
               ) : null}
 
               <table className="w-full text-left text-xs">
-                <thead className="text-[9.5px] font-bold uppercase tracking-wider text-slate-400 bg-slate-50 sticky top-0 border-b border-slate-100">
+                <thead className="text-[10px] font-serif uppercase tracking-wider text-slate-400 bg-slate-50/70 sticky top-0 border-b border-slate-100">
                   <tr>
-                    <th className="p-3">ວັນທີ</th>
-                    <th className="p-3">ສິນຄ້າ</th>
-                    <th className="p-3">ຮ້ານຄ້າ</th>
-                    <th className="p-3 text-right">ລາຄາເດີມ</th>
-                    <th className="p-3 text-right">ລາຄາທຶນ (LAK)</th>
-                    <th className="p-3 text-center">ໃບບິນ</th>
-                    <th className="p-3 text-center">ຈັດການ</th>
+                    <th className="p-3.5 pl-4">Date</th>
+                    <th className="p-3.5">Product / Item</th>
+                    <th className="p-3.5">Supplier</th>
+                    <th className="p-3.5 text-right">Original</th>
+                    <th className="p-3.5 text-right">Cost (LAK)</th>
+                    <th className="p-3.5 text-center">Receipt</th>
+                    <th className="p-3.5 text-center pr-4">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {!isLedgerLoading && paginatedSupplierPrices.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="p-12 text-center text-slate-400 text-xs">
-                        {'ບໍ່ພົບບິນຈັດຊື້ໃນເດືອນ ' + selectedLedgerMonth}
+                      <td colSpan={7} className="p-12 text-center text-slate-400 text-xs font-serif">
+                        {'No procurement records found for ' + selectedLedgerMonth}
                       </td>
                     </tr>
                   ) : (
@@ -1040,67 +1040,67 @@ export default function Suppliers() {
                       const prod = products.find(prod => prod.id === p.productId);
 
                       return (
-                        <tr key={p.id} className="hover:bg-slate-50 transition-all">
-                          <td className="p-3 font-mono text-[11px] text-slate-500 whitespace-nowrap">
+                        <tr key={p.id} className="hover:bg-slate-50/70 transition-all">
+                          <td className="p-3.5 pl-4 font-mono text-xs text-slate-500 whitespace-nowrap">
                             {toStandardDateString(p.date || p.createdAt)}
                           </td>
 
-                          <td className="p-3">
-                            <div className="flex items-center gap-2.5">
+                          <td className="p-3.5">
+                            <div className="flex items-center gap-3">
                               {prod?.imageUrl ? (
                                 <img 
                                   src={prod.imageUrl} 
                                   alt="" 
                                   onClick={() => setPreviewImageUrl(prod.imageUrl)}
-                                  className="w-10 h-10 object-contain rounded-xl border border-slate-200 bg-white p-1 cursor-pointer shrink-0 shadow-sm hover:scale-105 transition-all" 
+                                  className="w-10 h-10 object-contain rounded-xl border border-slate-200 bg-white p-1 cursor-pointer shrink-0 shadow-xs hover:scale-105 transition-all" 
                                 />
                               ) : (
-                                <div className="w-10 h-10 rounded-xl bg-slate-100 border border-slate-200 flex items-center justify-center text-xs font-black text-slate-400 shrink-0">
+                                <div className="w-10 h-10 rounded-xl bg-slate-100 border border-slate-200 flex items-center justify-center text-xs font-serif text-[#001839] shrink-0">
                                   {prod?.name?.slice(0, 1) || 'P'}
                                 </div>
                               )}
                               <div>
-                                <p className="font-bold text-[#001839] text-xs">{prod?.name || 'Item'}</p>
+                                <p className="font-medium text-[#001839] text-xs">{prod?.name || 'Item'}</p>
                                 <p className="text-[10px] text-slate-400 font-mono">
-                                  {p.quantity + ' ' + p.unit + (prod?.packSize ? ' × ' + prod.packSize : '')}
+                                  {p.quantity + ' ' + p.unit + (prod?.packSize ? ' • ' + prod.packSize : '')}
                                 </p>
                               </div>
                             </div>
                           </td>
 
-                          <td className="p-3 font-bold text-slate-700 whitespace-nowrap">
+                          <td className="p-3.5 font-medium text-slate-700 whitespace-nowrap">
                             {p.supplier}
                           </td>
 
-                          <td className="p-3 text-right font-mono text-slate-500 whitespace-nowrap">
+                          <td className="p-3.5 text-right font-mono text-slate-500 whitespace-nowrap">
                             {(p.priceOriginal || 0).toLocaleString() + ' ' + (p.currency || 'LAK')}
                           </td>
 
-                          <td className="p-3 text-right font-mono font-black text-emerald-600 whitespace-nowrap">
+                          <td className="p-3.5 text-right font-serif text-sm text-emerald-700 font-semibold whitespace-nowrap">
                             {Math.round(Number(p.totalPriceLAK || 0)).toLocaleString() + " ₭"}
                           </td>
 
-                          <td className="p-3 text-center whitespace-nowrap">
+                          <td className="p-3.5 text-center whitespace-nowrap">
                             {p.billImageUrl ? (
                               <button
                                 onClick={() => setPreviewImageUrl(p.billImageUrl)}
-                                className="w-8 h-8 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 inline-flex items-center justify-center cursor-pointer transition-all border border-emerald-200"
+                                className="w-8 h-8 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 inline-flex items-center justify-center cursor-pointer transition-all border border-emerald-200/70"
                                 title="ເບິ່ງຮູບໃບບິນ"
                               >
-                                <Eye className="w-4 h-4" />
+                                <Eye strokeWidth={1.4} className="w-4 h-4" />
                               </button>
                             ) : (
-                              <span className="text-slate-300 text-xs">-</span>
+                              <span className="text-slate-300 text-xs font-serif">-</span>
                             )}
                           </td>
 
-                          <td className="p-3 text-center whitespace-nowrap">
+                          <td className="p-3.5 text-center pr-4 whitespace-nowrap">
                             <button
                               onClick={() => handleDeleteEntry(p.id)}
                               className="p-1.5 hover:bg-rose-50 rounded-lg text-slate-400 hover:text-rose-500 cursor-pointer transition-all"
-                              title="ລຶບລາຍການນີ້"
+                              title="Delete Record"
                             >
-                              <Trash2 className="w-4 h-4" />
+                              <Trash2 strokeWidth={1.4} className="w-4 h-4" />
                             </button>
                           </td>
                         </tr>
@@ -1113,23 +1113,23 @@ export default function Suppliers() {
 
             {/* Pagination Controls */}
             {!isLedgerLoading && totalPages > 1 && (
-              <div className="p-3 border-t border-slate-100 flex justify-between items-center text-xs shrink-0 bg-slate-50/70">
+              <div className="p-3.5 border-t border-slate-100 flex justify-between items-center text-xs shrink-0 bg-slate-50/50">
                 <button
                   disabled={currentPage === 1}
                   onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                  className="px-3 py-1 rounded-lg bg-white text-[#001839] font-bold disabled:opacity-30 cursor-pointer border border-slate-200"
+                  className="px-3.5 py-1.5 rounded-lg bg-white text-[#001839] font-serif uppercase tracking-wider text-[11px] disabled:opacity-30 cursor-pointer border border-slate-200 transition"
                 >
-                  ◀ ກ່ອນໜ້າ
+                  ◀ Previous
                 </button>
-                <span className="text-[11px] font-bold text-slate-500">
-                  {'ໜ້າ ' + currentPage + ' ຈາກ ' + totalPages}
+                <span className="text-[11px] font-serif text-slate-500 uppercase tracking-wider">
+                  {'Page ' + currentPage + ' of ' + totalPages}
                 </span>
                 <button
                   disabled={currentPage === totalPages}
                   onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                  className="px-3 py-1 rounded-lg bg-white text-[#001839] font-bold disabled:opacity-30 cursor-pointer border border-slate-200"
+                  className="px-3.5 py-1.5 rounded-lg bg-white text-[#001839] font-serif uppercase tracking-wider text-[11px] disabled:opacity-30 cursor-pointer border border-slate-200 transition"
                 >
-                  ຖັດໄປ ▶
+                  Next ▶
                 </button>
               </div>
             )}
@@ -1139,45 +1139,45 @@ export default function Suppliers() {
 
       </div>
 
-      {/* Modal ຈັດການຮ້ານຄ້າ */}
+      {/* ================= Modal: ຈັດການຮ້ານຄ້າ (Supplier Manager) ================= */}
       {showSupplierModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
           <div className="bg-white w-full max-w-md rounded-3xl p-6 shadow-2xl border border-slate-200 space-y-4">
-            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
-              <div className="flex items-center gap-2">
-                <Store className="w-5 h-5 text-indigo-600" />
-                <h3 className="text-sm font-serif tracking-tight text-[#001839] uppercase">
-                  ຈັດການຮ້ານຄ້າ (Supplier Manager)
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3.5">
+              <div className="flex items-center gap-2.5">
+                <Store strokeWidth={1.4} className="w-5 h-5 text-[#001839]" />
+                <h3 className="text-base font-serif tracking-tight text-[#001839] uppercase">
+                  Supplier Directory
                 </h3>
               </div>
-              <button onClick={() => setShowSupplierModal(false)} className="cursor-pointer text-slate-400 hover:text-slate-600">
-                <X className="w-5 h-5" />
+              <button onClick={() => setShowSupplierModal(false)} className="cursor-pointer text-slate-400 hover:text-slate-600 transition">
+                <X strokeWidth={1.4} className="w-5 h-5" />
               </button>
             </div>
 
             <div className="p-3.5 bg-slate-50 rounded-2xl space-y-2 border border-slate-200">
-              <span className="text-[10px] font-black uppercase text-slate-500">ເພີ່ມຮ້ານຄ້າໃໝ່</span>
+              <span className="text-[10px] font-serif uppercase tracking-wider text-slate-500">Add New Supplier</span>
               <div className="flex items-center gap-2">
                 <input
                   type="text"
-                  placeholder="ຊື່ຮ້ານ (ເຊັ່ນ: Sokthavy, Lazada...)"
+                  placeholder="Supplier Name..."
                   value={newSupName}
                   onChange={e => setNewSupName(e.target.value)}
-                  className="flex-1 h-9 px-3 rounded-xl bg-white border border-slate-200 text-xs font-bold outline-none text-[#001839]"
+                  className="flex-1 h-9 px-3 rounded-xl bg-white border border-slate-200 text-xs font-sans outline-none text-[#001839]"
                 />
                 <input
                   type="text"
-                  placeholder="ລະຫັດ (ເຊັ່ນ ST)"
+                  placeholder="CODE"
                   value={newSupCode}
                   onChange={e => setNewSupCode(e.target.value.toUpperCase())}
-                  className="w-20 h-9 px-2 rounded-xl bg-white border border-slate-200 text-xs font-mono font-bold uppercase outline-none text-center text-[#001839]"
+                  className="w-20 h-9 px-2 rounded-xl bg-white border border-slate-200 text-xs font-mono font-medium uppercase outline-none text-center text-[#001839]"
                 />
                 <button
                   type="button"
                   onClick={handleAddSupplier}
-                  className="h-9 px-3 bg-[#001839] hover:bg-[#00285d] text-white rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-1 cursor-pointer"
+                  className="h-9 px-3.5 bg-[#001839] hover:bg-[#00285d] text-white rounded-xl text-xs font-serif uppercase tracking-wider flex items-center gap-1 cursor-pointer transition"
                 >
-                  <Plus className="w-3.5 h-3.5" /> ເພີ່ມ
+                  <Plus strokeWidth={1.4} className="w-3.5 h-3.5" /> Add
                 </button>
               </div>
             </div>
@@ -1185,19 +1185,19 @@ export default function Suppliers() {
             <div className="max-h-60 overflow-y-auto space-y-2 pr-1">
               {suppliersList.map(sup => (
                 <div key={sup.id} className="p-3 bg-slate-50 rounded-2xl flex justify-between items-center border border-slate-100">
-                  <div className="flex items-center gap-2">
-                    <span className="w-8 h-8 rounded-lg bg-[#001839]/5 text-[#001839] font-mono font-black text-xs flex items-center justify-center border border-slate-200">
+                  <div className="flex items-center gap-2.5">
+                    <span className="w-8 h-8 rounded-lg bg-[#001839]/5 text-[#001839] font-serif text-xs flex items-center justify-center border border-slate-200 font-semibold">
                       {sup.code || 'OT'}
                     </span>
-                    <span className="font-bold text-xs text-slate-800">{sup.name}</span>
+                    <span className="font-medium text-xs text-slate-800">{sup.name}</span>
                   </div>
                   {suppliersList.length > 1 && (
                     <button
                       onClick={() => handleDeleteSupplier(sup.id)}
-                      className="p-1.5 text-rose-400 hover:text-rose-600 rounded-lg cursor-pointer"
-                      title="ລຶບຮ້ານຄ້ານີ້"
+                      className="p-1.5 text-slate-400 hover:text-rose-500 rounded-lg cursor-pointer transition"
+                      title="Delete Supplier"
                     >
-                      <Trash2 className="w-4 h-4" />
+                      <Trash2 strokeWidth={1.4} className="w-4 h-4" />
                     </button>
                   )}
                 </div>
@@ -1207,43 +1207,43 @@ export default function Suppliers() {
             <div className="pt-2 border-t border-slate-100">
               <button
                 onClick={() => setShowSupplierModal(false)}
-                className="w-full h-10 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-black uppercase tracking-wider rounded-xl cursor-pointer"
+                className="w-full h-10 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-serif uppercase tracking-wider rounded-xl cursor-pointer transition"
               >
-                ປິດໜ້າຕ່າງ
+                Close Window
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Modal ຈັດການສິນຄ້າ */}
+      {/* ================= Modal: ຈັດການສິນຄ້າ (Product Manager) ================= */}
       {showProductManager && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
           <div className="bg-white w-full max-w-2xl rounded-3xl p-6 shadow-2xl border border-slate-200 space-y-4 max-h-[90vh] flex flex-col">
-            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
-              <div className="flex items-center gap-2">
-                <List className="w-5 h-5 text-emerald-600" />
-                <h3 className="text-sm font-serif tracking-tight text-[#001839] uppercase">
-                  {editingProductId ? 'ແກ້ໄຂສິນຄ້າ & ຮູບພາບ' : 'ຈັດການສິນຄ້າໃນຄັງ (Product Manager)'}
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3.5">
+              <div className="flex items-center gap-2.5">
+                <List strokeWidth={1.4} className="w-5 h-5 text-[#001839]" />
+                <h3 className="text-base font-serif tracking-tight text-[#001839] uppercase">
+                  {editingProductId ? 'Edit Product & Media' : 'Product Inventory Manager'}
                 </h3>
               </div>
-              <button onClick={() => { setShowProductManager(false); setEditingProductId(null); }} className="cursor-pointer text-slate-400 hover:text-slate-600">
-                <X className="w-5 h-5" />
+              <button onClick={() => { setShowProductManager(false); setEditingProductId(null); }} className="cursor-pointer text-slate-400 hover:text-slate-600 transition">
+                <X strokeWidth={1.4} className="w-5 h-5" />
               </button>
             </div>
 
             <form onSubmit={handleSaveProduct} className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-3">
               <div className="flex items-center justify-between">
-                <span className="text-[10px] font-black uppercase text-slate-500">
-                  {editingProductId ? 'ກຳລັງແກ້ໄຂສິນຄ້າ' : 'ເພີ່ມສິນຄ້າໃໝ່ (ພ້ອມຮູບພາບ)'}
+                <span className="text-[10px] font-serif uppercase tracking-wider text-slate-500">
+                  {editingProductId ? 'Editing Product' : 'Add New Product to Catalog'}
                 </span>
                 {editingProductId && (
                   <button 
                     type="button" 
                     onClick={() => { setEditingProductId(null); setProdFormName(''); setProdFormImageBase64(''); }}
-                    className="text-[10px] text-rose-500 font-bold uppercase cursor-pointer"
+                    className="text-[10px] text-rose-500 font-serif uppercase tracking-wider cursor-pointer hover:underline"
                   >
-                    ຍົກເລີກການແກ້ໄຂ
+                    Cancel Edit
                   </button>
                 )}
               </div>
@@ -1267,15 +1267,15 @@ export default function Suppliers() {
                   />
                   <label 
                     htmlFor="product-photo-upload" 
-                    className="w-full h-24 rounded-2xl border-2 border-dashed border-slate-300 flex flex-col items-center justify-center gap-1 cursor-pointer hover:bg-slate-100 transition-all overflow-hidden relative bg-white"
-                    title="ລາກຮູບມາວາງ ຫຼື ກົດ Ctrl+V ໄດ້ເລີຍ"
+                    className="w-full h-24 rounded-2xl border border-dashed border-slate-300 flex flex-col items-center justify-center gap-1 cursor-pointer hover:bg-white transition-all overflow-hidden relative bg-white shadow-xs"
+                    title="Drop image or Ctrl+V"
                   >
                     {prodFormImageBase64 ? (
                       <img src={prodFormImageBase64} alt="" className="w-full h-full object-contain p-1" />
                     ) : (
                       <>
-                        <ImagePlus className="w-5 h-5 text-indigo-600" />
-                        <span className="text-[8.5px] font-bold text-slate-400 text-center">ໃສ່ຮູບ (Drop/Ctrl+V)</span>
+                        <ImagePlus strokeWidth={1.4} className="w-5 h-5 text-[#001839]" />
+                        <span className="text-[9px] font-serif uppercase tracking-wider text-slate-400 text-center">Media (Drop/Ctrl+V)</span>
                       </>
                     )}
                   </label>
@@ -1286,32 +1286,32 @@ export default function Suppliers() {
                     <input
                       type="text"
                       required
-                      placeholder="ຊື່ສິນຄ້າ (ເຊັ່ນ: ນ້ຳດື່ມ, peanut butter...)"
+                      placeholder="ຊື່ສິນຄ້າ / Product Name..."
                       value={prodFormName}
                       onChange={e => setProdFormName(e.target.value)}
-                      className="col-span-2 h-9 px-3 rounded-xl bg-white border border-slate-200 text-xs font-bold outline-none text-[#001839]"
+                      className="col-span-2 h-9 px-3 rounded-xl bg-white border border-slate-200 text-xs font-sans outline-none text-[#001839] focus:border-[#001839]"
                     />
                     <input
                       type="text"
-                      placeholder="ຂະໜາດ (ເຊັ່ນ 1ແພັກ × 1500ml)"
+                      placeholder="Pack Size (e.g. 1pack × 1500ml)"
                       value={prodFormPackSize}
                       onChange={e => setProdFormPackSize(e.target.value)}
-                      className="h-9 px-3 rounded-xl bg-white border border-slate-200 text-xs font-mono outline-none text-[#001839]"
+                      className="h-9 px-3 rounded-xl bg-white border border-slate-200 text-xs font-mono outline-none text-[#001839] focus:border-[#001839]"
                     />
                     <div className="flex items-center gap-2">
                       <input
                         type="text"
-                        placeholder="ຫົວໜ່ວຍ (UNIT)"
+                        placeholder="UNIT"
                         value={prodFormUnit}
                         onChange={e => setProdFormUnit(e.target.value)}
-                        className="w-24 h-9 px-2 rounded-xl bg-white border border-slate-200 text-xs font-bold text-center uppercase outline-none text-[#001839]"
+                        className="w-24 h-9 px-2 rounded-xl bg-white border border-slate-200 text-xs font-serif text-center uppercase outline-none text-[#001839] focus:border-[#001839]"
                       />
                       <button
                         type="submit"
                         disabled={prodSaving}
-                        className="flex-1 h-9 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black uppercase tracking-wider cursor-pointer transition-all shadow-sm"
+                        className="flex-1 h-9 bg-[#001839] hover:bg-[#00285d] text-white rounded-xl text-xs font-serif uppercase tracking-wider cursor-pointer transition-all shadow-xs"
                       >
-                        {prodSaving ? '...' : (editingProductId ? 'ບັນທຶກການແກ້ໄຂ' : '+ ເພີ່ມສິນຄ້າ')}
+                        {prodSaving ? 'Saving...' : (editingProductId ? 'Save Changes' : '+ Add to Inventory')}
                       </button>
                     </div>
                   </div>
@@ -1328,15 +1328,15 @@ export default function Suppliers() {
                         src={p.imageUrl} 
                         alt="" 
                         onClick={() => setPreviewImageUrl(p.imageUrl)}
-                        className="w-10 h-10 object-contain rounded-xl border border-slate-200 bg-white p-1 cursor-pointer shrink-0" 
+                        className="w-10 h-10 object-contain rounded-xl border border-slate-200 bg-white p-1 cursor-pointer shrink-0 shadow-xs" 
                       />
                     ) : (
-                      <div className="w-10 h-10 rounded-xl bg-slate-200 flex items-center justify-center text-xs font-black text-slate-400 shrink-0">
+                      <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center text-xs font-serif text-[#001839] shrink-0 border border-slate-200">
                         {p.name.slice(0, 1)}
                       </div>
                     )}
                     <div>
-                      <p className="font-bold text-xs text-slate-800">{p.name}</p>
+                      <p className="font-medium text-xs text-slate-800">{p.name}</p>
                       <p className="text-[10px] text-slate-400 font-mono">
                         {p.unit} {p.packSize ? '• ' + p.packSize : ''}
                       </p>
@@ -1347,10 +1347,10 @@ export default function Suppliers() {
                     <button
                       type="button"
                       onClick={() => handleEditProductClick(p)}
-                      className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-lg cursor-pointer transition-all"
-                      title="ແກ້ໄຂສິນຄ້າ ຫຼື ປ່ຽນຮູບ"
+                      className="p-1.5 text-[#001839] hover:bg-slate-200 rounded-lg cursor-pointer transition-all"
+                      title="Edit Product"
                     >
-                      <Edit3 className="w-4 h-4" />
+                      <Edit3 strokeWidth={1.4} className="w-4 h-4" />
                     </button>
                     <button
                       type="button"
@@ -1359,10 +1359,10 @@ export default function Suppliers() {
                           await deleteDoc(doc(db, 'products', p.id));
                         }
                       }}
-                      className="p-1.5 text-rose-400 hover:bg-rose-50 rounded-lg cursor-pointer transition-all"
-                      title="ລຶບສິນຄ້າ"
+                      className="p-1.5 text-slate-400 hover:text-rose-500 rounded-lg cursor-pointer transition-all"
+                      title="Delete Product"
                     >
-                      <Trash2 className="w-4 h-4" />
+                      <Trash2 strokeWidth={1.4} className="w-4 h-4" />
                     </button>
                   </div>
                 </div>
@@ -1372,22 +1372,24 @@ export default function Suppliers() {
             <div className="pt-2 border-t border-slate-100">
               <button
                 onClick={() => { setShowProductManager(false); setEditingProductId(null); }}
-                className="w-full h-10 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-black uppercase tracking-wider rounded-xl cursor-pointer"
+                className="w-full h-10 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-serif uppercase tracking-wider rounded-xl cursor-pointer transition"
               >
-                ປິດໜ້າຕ່າງ
+                Close Catalog
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Modal ເບິ່ງຮູບໃຫຍ່ */}
+      {/* ================= Modal: Image Full Preview ================= */}
       {previewImageUrl && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
-          <div className="bg-white p-4 rounded-3xl max-w-2xl max-h-[90vh] flex flex-col gap-3 border border-slate-200 shadow-2xl">
-            <div className="flex justify-between items-center">
-              <span className="text-xs font-serif tracking-tight text-[#001839] uppercase">Image Preview</span>
-              <button onClick={() => setPreviewImageUrl(null)} className="cursor-pointer text-slate-400 hover:text-slate-600"><X className="w-4 h-4" /></button>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs">
+          <div className="bg-white p-5 rounded-3xl max-w-2xl max-h-[90vh] flex flex-col gap-3 border border-slate-200 shadow-2xl">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-2.5">
+              <span className="text-xs font-serif tracking-wider text-[#001839] uppercase">Receipt & Media Preview</span>
+              <button onClick={() => setPreviewImageUrl(null)} className="cursor-pointer text-slate-400 hover:text-slate-600 transition">
+                <X strokeWidth={1.4} className="w-4 h-4" />
+              </button>
             </div>
             <img src={previewImageUrl} alt="Preview" className="max-h-[75vh] object-contain rounded-xl" />
           </div>
