@@ -1106,6 +1106,7 @@ export default function Financials({ appConfig, selectedBranch }: { appConfig: a
         correctPin={appConfig?.masterApprovalPin}
         onSuccess={handleDeleteConfirmed}
       />
+      
 
     </div>
   );
