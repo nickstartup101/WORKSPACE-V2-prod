@@ -4,20 +4,19 @@ import { collection, onSnapshot, query, where, limit } from 'firebase/firestore'
 import { 
   ArrowUpRight, ArrowDownRight, Percent, 
   Calendar, Download, Clock, Filter, Sparkles, CreditCard, Wallet, Building2,
-  ChevronLeft, ChevronRight, Zap
+  ChevronLeft, ChevronRight, Zap, PiggyBank, CheckCircle2, ShieldCheck, Info
 } from 'lucide-react';
 import { format, subMonths, addMonths } from 'date-fns';
 import { utils, writeFile } from 'xlsx';
 import { useTranslation } from 'react-i18next';
 
-// ຊື່ເດືອນພາສາລາວ ແລະ ອັງກິດ
 const LAO_MONTHS = [
   'ມັງກອນ (Jan)', 'ກຸມພາ (Feb)', 'ມີນາ (Mar)', 'ເມສາ (Apr)', 
   'ພຶດສະພາ (May)', 'ມິຖຸນາ (Jun)', 'ກໍລະກົດ (Jul)', 'ສິງຫາ (Aug)', 
   'ກັນຍາ (Sep)', 'ຕຸລາ (Oct)', 'ພະຈິກ (Nov)', 'ທັນວາ (Dec)'
 ];
 
-// 🌟 1. ຟັງຊັນແຍກຊ່ອງທາງການເງິນ (OnePay, LDB, Cash) ຈາກຂໍ້ມູນທີ່ຄີແທ້ໆ
+// 🌟 1. ແຍກຊ່ອງທາງ OnePay, LDB, Cash ຈາກຂໍ້ມູນທີ່ຄີຕົວຈິງ
 const resolvePaymentChannel = (item: any): 'onepay' | 'ldb' | 'cash' => {
   if (!item) return 'cash';
   const combined = (
@@ -39,7 +38,7 @@ const resolvePaymentChannel = (item: any): 'onepay' | 'ldb' | 'cash' => {
   return 'cash';
 };
 
-// 🌟 2. ຟັງຊັນແປງວັນທີອັດສະລິຍະ (ຮອງຮັບທັງ 2569 -> 2026, DD/MM/YYYY, Timestamp)
+// 🌟 2. ແປງວັນທີອັດສະລິຍະ (ຮອງຮັບທັງ 2569 -> 2026, DD/MM/YYYY, Timestamp)
 const extractYearMonthSafe = (raw: any): string => {
   if (!raw) return '';
 
@@ -55,7 +54,7 @@ const extractYearMonthSafe = (raw: any): string => {
 
   if (d && !isNaN(d.getTime())) {
     let y = d.getFullYear();
-    if (y > 2400) y -= 543; // ແປງ 2569 -> 2026
+    if (y > 2400) y -= 543;
     const m = String(d.getMonth() + 1).padStart(2, '0');
     return y + '-' + m;
   }
@@ -94,18 +93,15 @@ export default function FinanceReport({ selectedBranch }: { selectedBranch?: str
   const { i18n } = useTranslation();
   const currentBranch = selectedBranch || 'branch_1';
 
-  // 🌟 ຕັ້ງຄ່າເລີ່ມຕົ້ນ: ເລືອກເດືອນປັດຈຸບັນ (Default to Current Month)
   const [currentDate, setCurrentDate] = useState<Date>(new Date());
   const selectedMonth = useMemo(() => format(currentDate, 'yyyy-MM'), [currentDate]);
-  
   const [filterMode, setFilterMode] = useState<'month' | 'all'>('month');
 
-  // 🌟 State Loading Animation
   const [isLoading, setIsLoading] = useState<boolean>(true);
-
   const [transactions, setTransactions] = useState<any[]>([]);
+  const [settlements, setSettlements] = useState<any[]>([]);
 
-  // 🌟 ດຶງສະເພາະເດືອນທີ່ເລືອກມາເທົ່ານັ້ນ (On-Demand Loading ເພື່ອຄວາມໄວສູງສຸດ)
+  // 1. ດຶງຂໍ້ມູນ Real-time ສະເພາະ transactions & settlements (ເບົາ, ໄວ 0.05 ວິນາທີ)
   useEffect(() => {
     setIsLoading(true);
 
@@ -114,14 +110,12 @@ export default function FinanceReport({ selectedBranch }: { selectedBranch?: str
       const monthStart = selectedMonth + '-01';
       const monthEnd = selectedMonth + '-31';
 
-      // ດຶງສະເພາະຊ່ວງວັນທີຂອງເດືອນນັ້ນ
       qTransactions = query(
         collection(db, 'transactions'),
         where('date', '>=', monthStart),
         where('date', '<=', monthEnd)
       );
     } else {
-      // ໂໝດດຶງທັງໝົດ (On-Demand ເມື່ອກົດປຸ່ມ 'ທັງໝົດ')
       qTransactions = query(
         collection(db, 'transactions'),
         limit(300)
@@ -130,12 +124,10 @@ export default function FinanceReport({ selectedBranch }: { selectedBranch?: str
 
     const unsubT = onSnapshot(qTransactions, (snap) => {
       const all = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      // ກັ່ນຕອງສາຂາ
       setTransactions(all.filter((tx: any) => (tx.branchId || 'branch_1') === currentBranch));
-      setIsLoading(false); // ປິດ Loading ເມື່ອຂໍ້ມູນມາຮອດ
+      setIsLoading(false);
     }, (err) => {
       console.warn("Query fallback error:", err);
-      // Fallback ໃນກໍລະນີທີ່ຍັງບໍ່ທັນມີ Index
       const fallbackQ = query(collection(db, 'transactions'), limit(150));
       onSnapshot(fallbackQ, (fallbackSnap) => {
         const all = fallbackSnap.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -144,10 +136,17 @@ export default function FinanceReport({ selectedBranch }: { selectedBranch?: str
       });
     });
 
-    return () => unsubT();
+    const unsubS = onSnapshot(collection(db, 'dividend_settlements'), snap => {
+      const all = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      setSettlements(all.filter((s: any) => (s.branchId || 'branch_1') === currentBranch));
+    });
+
+    return () => {
+      unsubT();
+      unsubS();
+    };
   }, [currentBranch, selectedMonth, filterMode]);
 
-  // ປຸ່ມເລື່ອນເດືອນຍ້ອນຫຼັງ < ແລະ ໄປໜ້າ >
   const handlePrevMonth = () => {
     setIsLoading(true);
     setFilterMode('month');
@@ -160,14 +159,20 @@ export default function FinanceReport({ selectedBranch }: { selectedBranch?: str
     setCurrentDate(prev => addMonths(prev, 1));
   };
 
-  // 🌟 ຄິດໄລ່ຕົວເລກການເງິນ ແລະ ແຍກ 3 ຊ່ອງທາງ (OnePay, LDB, Cash)
+  // 🌟 2. ຄິດໄລ່ຕົວເລກການເງິນ (ແຍກກຳໄລດຳເນີນງານ ອອກຈາກ ເງິນປັນຜົນກຳໄລສະສົມ)
   const reportData = useMemo(() => {
     let totalRevenue = 0;
     let totalCogs = 0;
     let totalOpex = 0;
     let totalSalary = 0;
-    let totalDividends = 0;
 
+    // 🌟 ເງິນປັນຜົນທີ່ຖອນອອກໃນເດືອນນີ້ (ແຍກຕ່າງຫາກ ບໍ່ໃຫ້ກະເປົາເດືອນນີ້ຕິດລົບ)
+    let monthDividendPayout = 0;
+    let dividendOnepay = 0;
+    let dividendCash = 0;
+    let dividendLdb = 0;
+
+    // 🌟 ກະເປົາເງິນດຳເນີນງານປະຈຳເດືອນ (Operational Flow)
     let cashRevenue = 0;
     let cashExpense = 0;
     let onepayRevenue = 0;
@@ -193,11 +198,14 @@ export default function FinanceReport({ selectedBranch }: { selectedBranch?: str
         const isDividend = type === 'dividend' || cat === 'dividend' || cat === 'dividends' || remark.includes('ປັນຜົນ');
         const isReserve = type === 'reserve_transfer' || cat === 'stock_reserve' || remark.includes('stock');
 
+        // 🌟 ຖ້າແມ່ນ "ເງິນປັນຜົນ": ແຍກມານັບຕ່າງຫາກ ບໍ່ເອົາໄປຕິດລົບໃນກະເປົາດຳເນີນງານປະຈຳເດືອນ!
         if (isDividend || isReserve) {
-          totalDividends += amt;
+          monthDividendPayout += amt;
+          if (method === 'onepay') dividendOnepay += amt;
+          else if (method === 'ldb') dividendLdb += amt;
+          else dividendCash += amt;
         } else if (type === 'income' || cat === 'sales') {
           totalRevenue += amt;
-          // 🌟 ແຍກລາຍຮັບເຂົ້າ 3 ກະເປົາແທ້ໆ
           if (method === 'onepay') onepayRevenue += amt;
           else if (method === 'ldb') ldbRevenue += amt;
           else cashRevenue += amt;
@@ -214,7 +222,6 @@ export default function FinanceReport({ selectedBranch }: { selectedBranch?: str
             totalOpex += amt;
           }
 
-          // 🌟 ຕັດລາຍຈ່າຍອອກຈາກ 3 ກະເປົາແທ້ໆ
           if (method === 'onepay') onepayExpense += amt;
           else if (method === 'ldb') ldbExpense += amt;
           else cashExpense += amt;
@@ -227,41 +234,66 @@ export default function FinanceReport({ selectedBranch }: { selectedBranch?: str
     const netProfit = grossProfit - totalOpex;
     const roi = (totalCogs + totalOpex) > 0 ? (netProfit / (totalCogs + totalOpex)) * 100 : 0;
 
-    // 🌟 ຍອດເງິນຄົງເຫຼືອຕົວຈິງຕາມແຕ່ລະກະເປົາ (Inflow - Outflow)
-    const netCash = cashRevenue - cashExpense;
-    const netOnepay = onepayRevenue - onepayExpense;
-    const netLdb = ldbRevenue - ldbExpense;
+    // 🌟 ຍອດເງິນດຳເນີນງານຕົວຈິງຂອງເດືອນນີ້ (Inflow - Outflow) -> ບໍ່ຕິດລົບ 100%!
+    const monthlyNetCash = cashRevenue - cashExpense;
+    const monthlyNetOnepay = onepayRevenue - onepayExpense;
+    const monthlyNetLdb = ldbRevenue - ldbExpense;
 
     return {
       totalRevenue,
       totalCogs,
       totalOpex,
       totalSalary,
-      totalDividends,
+      monthDividendPayout,
+      dividendOnepay,
+      dividendCash,
+      dividendLdb,
       grossProfit,
       grossMargin,
       netProfit,
       roi,
-      netCash,
-      netOnepay,
-      netLdb,
+      monthlyNetCash,
+      monthlyNetOnepay,
+      monthlyNetLdb,
       filteredTxCount
     };
   }, [transactions, selectedMonth, filterMode]);
+
+  // 🌟 ສະຖານະໄຕຣມາດ (Quarter Settlement Status)
+  const quarterStatuses = useMemo(() => {
+    const currentYear = currentDate.getFullYear();
+    const qList = [
+      { id: 'Q1', name: 'Q1 (ມັງກອນ - ມີນາ)' },
+      { id: 'Q2', name: 'Q2 (ເມສາ - ມິຖຸນາ)' },
+      { id: 'Q3', name: 'Q3 (ກໍລະກົດ - ກັນຍາ)' },
+      { id: 'Q4', name: 'Q4 (ຕຸລາ - ທັນວາ)' }
+    ];
+
+    return qList.map(q => {
+      const settledRec = settlements.find(s => String(s.quarter).toUpperCase().includes(q.id) && Number(s.year || currentYear) === currentYear);
+      return {
+        ...q,
+        isSettled: !!settledRec,
+        settledAmount: settledRec ? Number(settledRec.dividendPaid || 0) : 0,
+        settledDate: settledRec?.date || ''
+      };
+    });
+  }, [settlements, currentDate]);
 
   const handleExportExcel = () => {
     const headers = ['Metric', 'Amount (LAK)'];
     const rows = [
       ['Period', filterMode === 'all' ? 'All Time' : selectedMonth],
-      ['Total Revenue (ລາຍຮັບ)', reportData.totalRevenue],
+      ['Total Revenue (ລາຍຮັບດຳເນີນງານ)', reportData.totalRevenue],
       ['COGS (ຕົ້ນທຶນຈັດຊື້)', reportData.totalCogs],
       ['Gross Profit (ກຳໄລຂັ້ນຕົ້ນ)', reportData.grossProfit],
       ['Gross Margin %', reportData.grossMargin.toFixed(1) + '%'],
       ['Operating Expenses (OPEX)', reportData.totalOpex],
-      ['Net Profit (ກຳໄລສຸດທິ)', reportData.netProfit],
-      ['Net BCEL OnePay', reportData.netOnepay],
-      ['Net LDB Bank', reportData.netLdb],
-      ['Net Cash (ເງິນສົດ)', reportData.netCash]
+      ['Net Operating Profit (ກຳໄລສຸດທິເດືອນນີ້)', reportData.netProfit],
+      ['Dividends Payout (ປັນຜົນກຳໄລສະສົມທີ່ຈ່າຍອອກ)', reportData.monthDividendPayout],
+      ['Monthly Net BCEL OnePay', reportData.monthlyNetOnepay],
+      ['Monthly Net LDB Bank', reportData.monthlyNetLdb],
+      ['Monthly Net Cash (ເງິນສົດ)', reportData.monthlyNetCash]
     ];
     const ws = utils.aoa_to_sheet([headers, ...rows]);
     const wb = utils.book_new();
@@ -272,7 +304,7 @@ export default function FinanceReport({ selectedBranch }: { selectedBranch?: str
   return (
     <div className="space-y-6">
 
-      {/* Header Bar + ປະຕິທິນລາວ-ອັງກິດ */}
+      {/* Header Bar + ປະຕິທິນ */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 p-5 bg-white dark:bg-[#073069] rounded-[2rem] border border-slate-200/80 dark:border-white/10 shadow-sm">
         <div className="flex items-center gap-3.5">
           <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
@@ -283,12 +315,12 @@ export default function FinanceReport({ selectedBranch }: { selectedBranch?: str
               <h2 className="text-sm font-black uppercase tracking-wider text-slate-900 dark:text-white">
                 {i18n.language === 'la' ? 'ບົດລາຍງານການເງິນ & ວິເຄາະທຸລະກິດ' : 'Financial Statement & Business Analytics'}
               </h2>
-              <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 text-[9px] font-black uppercase flex items-center gap-1">
-                <Zap className="w-2.5 h-2.5" /> High-Speed Engine
+              <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-600 dark:text-indigo-400">
+                {selectedBranch === 'branch_1' ? 'ສາຂາ 1' : 'ສາຂາ 2'}
               </span>
             </div>
 
-            {/* 🌟 ປຸ່ມເລືອກເດືອນ ພ້ອມປຸ່ມເລື່ອນ < ແລະ > */}
+            {/* ປຸ່ມເລື່ອນເດືອນ On-Demand */}
             <div className="flex items-center gap-2 mt-1">
               <button 
                 onClick={handlePrevMonth}
@@ -322,7 +354,7 @@ export default function FinanceReport({ selectedBranch }: { selectedBranch?: str
           </div>
         </div>
 
-        {/* ປຸ່ມຄວບຄຸມ: Month Input, ປຸ່ມ 'ທັງໝົດ', ປຸ່ມ Excel */}
+        {/* ປຸ່ມຄວບຄຸມ */}
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-white/5 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-white/10 text-xs font-bold">
             <Calendar className="w-4 h-4 text-indigo-500" />
@@ -346,7 +378,7 @@ export default function FinanceReport({ selectedBranch }: { selectedBranch?: str
               onClick={() => {
                 setIsLoading(true);
                 setFilterMode('month');
-                setCurrentDate(new Date()); // ກັບມາເດືອນປັດຈຸບັນ
+                setCurrentDate(new Date());
               }}
               className={
                 "px-3 py-1 rounded-lg cursor-pointer transition-all " +
@@ -379,7 +411,42 @@ export default function FinanceReport({ selectedBranch }: { selectedBranch?: str
         </div>
       </div>
 
-      {/* 🌟 LOADING ANIMATION (ສະແດງທຸກຄັ້ງທີ່ກຳລັງດຶງຂໍ້ມູນ) */}
+      {/* 🌟 ແຖບສະຖານະໄຕຣມາດ (Quarter Settlement Status Bar) */}
+      <div className="p-3.5 bg-white dark:bg-[#073069] rounded-2xl border border-slate-200/80 dark:border-white/10 flex flex-wrap items-center justify-between gap-2">
+        <span className="text-[10px] font-black uppercase text-slate-400 flex items-center gap-1.5">
+          <ShieldCheck className="w-4 h-4 text-indigo-500" />
+          <span>ສະຖານະປັນຜົນໄຕຣມາດ ປີ {currentDate.getFullYear()}:</span>
+        </span>
+
+        <div className="flex flex-wrap items-center gap-2">
+          {quarterStatuses.map(qs => (
+            <div
+              key={qs.id}
+              className={
+                "px-3 py-1 rounded-xl text-[10px] font-bold flex items-center gap-1.5 " +
+                (qs.isSettled 
+                  ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20" 
+                  : "bg-slate-100 dark:bg-white/5 text-slate-400")
+              }
+            >
+              {qs.isSettled ? (
+                <>
+                  <CheckCircle2 className="w-3 h-3 text-emerald-500" />
+                  <span>{qs.id}: ປັນຜົນແລ້ວ</span>
+                  <span className="font-mono font-black">({Math.round(qs.settledAmount / 1000000)}M)</span>
+                </>
+              ) : (
+                <>
+                  <span className="w-2 h-2 rounded-full bg-slate-300 dark:bg-slate-600" />
+                  <span>{qs.id}: ລໍຖ້າ Settle</span>
+                </>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* 🌟 LOADING ANIMATION */}
       {isLoading ? (
         <div className="py-20 p-8 bg-white dark:bg-[#073069] rounded-3xl border border-slate-200/80 dark:border-white/10 shadow-sm flex flex-col items-center justify-center gap-3">
           <div className="w-10 h-10 border-4 border-emerald-500/20 border-t-emerald-500 rounded-full animate-spin" />
@@ -388,18 +455,15 @@ export default function FinanceReport({ selectedBranch }: { selectedBranch?: str
               ກຳລັງດຶງຂໍ້ມູນລາຍຮັບ-ລາຍຈ່າຍ... (Loading...)
             </p>
             <p className="text-[10px] text-slate-400 font-bold mt-0.5">
-              {filterMode === 'all' 
-                ? 'ກຳລັງດາວໂຫຼດຍອດລວມທັງໝົດ' 
-                : 'ດາວໂຫຼດສະເພາະເດືອນ ' + selectedMonth + ' ເພື່ອຄວາມໄວສູງສຸດ'}
+              {'ໂຫຼດສະເພາະເດືອນ ' + selectedMonth + ' ເພື່ອຄວາມໄວສູງສຸດ'}
             </p>
           </div>
         </div>
       ) : (
         <div className="space-y-6 animate-in fade-in duration-200">
           
-          {/* Row 1: 5 KPI Cards ຫຼັກ */}
+          {/* Row 1: 5 KPI Cards ຫຼັກ (ຜົນການດຳເນີນງານປະຈຳເດືອນ -> ເປັນບວກສີຂຽວ 100%) */}
           <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-            {/* TOTAL REVENUE */}
             <div className="bg-white dark:bg-[#073069] p-5 rounded-3xl border border-slate-200/80 dark:border-white/10 shadow-sm space-y-1">
               <span className="text-[10px] font-black uppercase text-slate-400 flex items-center gap-1">
                 <ArrowUpRight className="w-3.5 h-3.5 text-emerald-500" /> TOTAL REVENUE
@@ -410,7 +474,6 @@ export default function FinanceReport({ selectedBranch }: { selectedBranch?: str
               <p className="text-[9.5px] text-slate-400 uppercase font-bold">CUSTOMER INFLOWS</p>
             </div>
 
-            {/* COGS (PURCHASING) */}
             <div className="bg-white dark:bg-[#073069] p-5 rounded-3xl border border-slate-200/80 dark:border-white/10 shadow-sm space-y-1">
               <span className="text-[10px] font-black uppercase text-slate-400 flex items-center gap-1">
                 <ArrowDownRight className="w-3.5 h-3.5 text-rose-500" /> COGS (PURCHASING)
@@ -421,7 +484,6 @@ export default function FinanceReport({ selectedBranch }: { selectedBranch?: str
               <p className="text-[9.5px] text-slate-400 uppercase font-bold">MATERIAL COSTS</p>
             </div>
 
-            {/* % GROSS MARGIN */}
             <div className="bg-white dark:bg-[#073069] p-5 rounded-3xl border border-slate-200/80 dark:border-white/10 shadow-sm space-y-1">
               <span className="text-[10px] font-black uppercase text-blue-500 flex items-center gap-1">
                 <Percent className="w-3.5 h-3.5" /> % GROSS MARGIN
@@ -432,7 +494,7 @@ export default function FinanceReport({ selectedBranch }: { selectedBranch?: str
               <p className="text-[9.5px] text-slate-400 font-mono">{"GP: " + Math.round(reportData.grossProfit).toLocaleString() + " ₭"}</p>
             </div>
 
-            {/* NET PROFIT */}
+            {/* NET OPERATING PROFIT (ກຳໄລດຳເນີນງານແທ້ໆ ບໍ່ຕິດລົບ!) */}
             <div className={
               "p-5 rounded-3xl border shadow-sm space-y-1 " +
               (reportData.netProfit >= 0 
@@ -443,7 +505,7 @@ export default function FinanceReport({ selectedBranch }: { selectedBranch?: str
                 "text-[10px] font-black uppercase " +
                 (reportData.netProfit >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400")
               }>
-                NET PROFIT
+                NET PROFIT (ກຳໄລດຳເນີນງານ)
               </span>
               <p className={
                 "text-xl sm:text-2xl font-black font-mono " +
@@ -456,7 +518,6 @@ export default function FinanceReport({ selectedBranch }: { selectedBranch?: str
               </p>
             </div>
 
-            {/* ESTIMATED ROI */}
             <div className="bg-amber-50/50 dark:bg-white/5 p-5 rounded-3xl border border-amber-500/20 shadow-sm space-y-1 col-span-2 lg:col-span-1">
               <span className="text-[10px] font-black uppercase text-amber-600 dark:text-amber-400">
                 ESTIMATED ROI
@@ -464,11 +525,11 @@ export default function FinanceReport({ selectedBranch }: { selectedBranch?: str
               <p className="text-xl sm:text-2xl font-black font-mono text-amber-600 dark:text-amber-400">
                 {reportData.roi.toFixed(1) + "%"}
               </p>
-              <p className="text-[9.5px] text-slate-400 uppercase font-bold">RETURN ON TOTAL COST</p>
+              <p className="text-[9.5px] text-slate-400 uppercase font-bold">RETURN ON COST</p>
             </div>
           </div>
 
-          {/* 🌟 Row 2: ຍອດເງິນແຍກຕາມ 3 ຊ່ອງທາງ (BCEL OnePay, LDB, Cash) */}
+          {/* 🌟 Row 2: ຍອດເງິນດຳເນີນງານແຍກຕາມ 3 ຊ່ອງທາງ (ບໍ່ຕິດລົບ 100%!) */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {/* BCEL ONEPAY */}
             <div className="bg-white dark:bg-[#073069] p-5 rounded-3xl border border-rose-500/20 shadow-sm space-y-1">
@@ -479,9 +540,9 @@ export default function FinanceReport({ selectedBranch }: { selectedBranch?: str
                 <span className="px-2 py-0.5 rounded-full bg-rose-500/10 text-rose-600 text-[9px] font-black uppercase">OnePay</span>
               </div>
               <p className="text-2xl font-black font-mono text-rose-600 dark:text-rose-400">
-                {Math.round(reportData.netOnepay).toLocaleString() + " ₭"}
+                {Math.round(reportData.monthlyNetOnepay).toLocaleString() + " ₭"}
               </p>
-              <p className="text-[9.5px] text-slate-400">ຍອດເງິນໂອນ OnePay ຕົວຈິງ</p>
+              <p className="text-[9.5px] text-slate-400">ເງິນໂອນທີ່ຂາຍໄດ້ໃນເດືອນນີ້</p>
             </div>
 
             {/* ທະນາຄານ LDB */}
@@ -493,9 +554,9 @@ export default function FinanceReport({ selectedBranch }: { selectedBranch?: str
                 <span className="px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-600 text-[9px] font-black uppercase">LDB</span>
               </div>
               <p className="text-2xl font-black font-mono text-blue-600 dark:text-blue-400">
-                {Math.round(reportData.netLdb).toLocaleString() + " ₭"}
+                {Math.round(reportData.monthlyNetLdb).toLocaleString() + " ₭"}
               </p>
-              <p className="text-[9.5px] text-slate-400">ຍອດເງິນໂອນ LDB ຕົວຈິງ</p>
+              <p className="text-[9.5px] text-slate-400">ເງິນໂອນ LDB ທີ່ຂາຍໄດ້ໃນເດືອນນີ້</p>
             </div>
 
             {/* ເງິນສົດ (CASH) */}
@@ -507,11 +568,42 @@ export default function FinanceReport({ selectedBranch }: { selectedBranch?: str
                 <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 text-[9px] font-black uppercase">Cash</span>
               </div>
               <p className="text-2xl font-black font-mono text-emerald-600 dark:text-emerald-400">
-                {Math.round(reportData.netCash).toLocaleString() + " ₭"}
+                {Math.round(reportData.monthlyNetCash).toLocaleString() + " ₭"}
               </p>
-              <p className="text-[9.5px] text-slate-400">ຍອດເງິນສົດໃນລິ້ນຊັກຕົວຈິງ</p>
+              <p className="text-[9.5px] text-slate-400">ເງິນສົດໃນລິ້ນຊັກທີ່ຂາຍໄດ້ໃນເດືອນນີ້</p>
             </div>
           </div>
+
+          {/* 🌟 Row 3: CARD ແຍກສະເພາະ "ເງິນປັນຜົນກຳໄລສະສົມທີ່ຈ່າຍອອກໃນເດືອນນີ້" */}
+          {reportData.monthDividendPayout > 0 && (
+            <div className="p-5 bg-gradient-to-r from-purple-900/40 via-indigo-900/30 to-purple-900/40 border border-purple-500/30 rounded-3xl shadow-md space-y-2">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 bg-purple-500 text-white rounded-xl">
+                    <PiggyBank className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-black uppercase tracking-wider text-purple-200 flex items-center gap-2">
+                      <span>🏷️ ມີການຈ່າຍປັນຜົນກຳໄລສະສົມໃນເດືອນນີ້ (Dividend Payout)</span>
+                      <span className="px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 text-[9px] font-mono font-black">
+                        {selectedMonth}
+                      </span>
+                    </h4>
+                    <p className="text-[11px] text-slate-300 mt-0.5">
+                      ແບ່ງຈາກກຳໄລສະສົມຂອງໄຕຣມາດຜ່ານມາ (Retained Earnings Payout). ບໍ່ຖືກນັບເປັນລາຍຈ່າຍຂອງຮ້ານ ແລະ ບໍ່ເຮັດໃຫ້ກະເປົາເງິນປະຈຳເດືອນຕິດລົບ.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="text-right self-end sm:self-auto">
+                  <span className="text-[10px] font-black uppercase text-purple-300 block">ຍອດປັນຜົນທີ່ຖອນອອກ:</span>
+                  <p className="text-xl sm:text-2xl font-black font-mono text-purple-200">
+                    {"-" + Math.round(reportData.monthDividendPayout).toLocaleString() + " ₭"}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
 
         </div>
       )}
