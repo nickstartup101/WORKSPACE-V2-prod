@@ -9,7 +9,7 @@ import {
   Plus, Trash2, Search, Download, 
   List, Receipt, Image as ImageIcon, Upload, Eye, X, Truck,
   Calendar, ChevronLeft, ChevronRight,
-  Store, Edit3, ImagePlus, CheckCircle2
+  Store, Edit3, ImagePlus, CheckCircle2, RotateCcw
 } from 'lucide-react';
 import { format, subMonths, addMonths } from 'date-fns';
 import * as XLSX from 'xlsx';
@@ -70,7 +70,7 @@ const toStandardDateString = (raw: any): string => {
   return '';
 };
 
-export default function Suppliers() {
+export default function Suppliers({ selectedBranch = 'branch_1' }: { selectedBranch?: string }) {
   const { i18n } = useTranslation();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const prodImgInputRef = useRef<HTMLInputElement>(null);
@@ -108,7 +108,9 @@ export default function Suppliers() {
   const [newSupName, setNewSupName] = useState('');
   const [newSupCode, setNewSupCode] = useState('');
 
-  // Bill Form
+  // 🌟 Bill Form & Edit State (ລະບົບແກ້ໄຂບິນຍ້ອນຫຼັງ)
+  const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
+  const [customBillNo, setCustomBillNo] = useState<string>('');
   const [billDate, setBillDate] = useState<string>(format(new Date(), 'yyyy-MM-dd'));
   const [billTime, setBillTime] = useState<string>(format(new Date(), 'HH:mm'));
   const [supplier, setSupplier] = useState<string>('CHANHOM');
@@ -137,6 +139,7 @@ export default function Suppliers() {
   ]);
 
   const generatedBillNo = useMemo(() => {
+    if (editingEntryId && customBillNo) return customBillNo;
     try {
       const parts = billDate.split('-');
       if (parts.length === 3) {
@@ -147,9 +150,9 @@ export default function Suppliers() {
       }
     } catch {}
     return '#' + format(new Date(), 'ddMMyyyy') + 'OT';
-  }, [billDate, supplier, suppliersList]);
+  }, [billDate, supplier, suppliersList, editingEntryId, customBillNo]);
 
-  // Real-time Sync
+  // Real-time Sync from Firestore
   useEffect(() => {
     setIsLedgerLoading(true);
 
@@ -222,6 +225,7 @@ export default function Suppliers() {
     setCurrentDate(prev => addMonths(prev, 1));
   };
 
+  // Image Processing & Compression (< 80KB)
   const processImageFile = (blobOrFile: Blob | File) => {
     if (!blobOrFile) return;
     const reader = new FileReader();
@@ -236,7 +240,7 @@ export default function Suppliers() {
         canvas.height = img.width > MAX_WIDTH ? (img.height * scaleSize) : img.height;
         const ctx = canvas.getContext('2d');
         ctx?.drawImage(img, 0, 0, canvas.width, canvas.height);
-        setBillImageBase64(canvas.toDataURL('image/jpeg', 0.45));
+        setBillImageBase64(canvas.toDataURL('image/jpeg', 0.5));
       };
     };
     reader.readAsDataURL(blobOrFile);
@@ -261,12 +265,11 @@ export default function Suppliers() {
     reader.readAsDataURL(blobOrFile);
   };
 
+  // 🌟 Global Ctrl + V Paste Listener
   useEffect(() => {
     const handlePaste = (e: ClipboardEvent) => {
       const clipboard = e.clipboardData;
       if (!clipboard) return;
-
-      let foundImage = false;
 
       if (clipboard.files && clipboard.files.length > 0) {
         for (let i = 0; i < clipboard.files.length; i++) {
@@ -275,13 +278,12 @@ export default function Suppliers() {
             e.preventDefault();
             if (showProductManager) processProductImageFile(file);
             else processImageFile(file);
-            foundImage = true;
-            break;
+            return;
           }
         }
       }
 
-      if (!foundImage && clipboard.items) {
+      if (clipboard.items) {
         for (let i = 0; i < clipboard.items.length; i++) {
           const item = clipboard.items[i];
           if (item.type.startsWith('image/')) {
@@ -290,8 +292,7 @@ export default function Suppliers() {
               e.preventDefault();
               if (showProductManager) processProductImageFile(blob);
               else processImageFile(blob);
-              foundImage = true;
-              break;
+              return;
             }
           }
         }
@@ -426,6 +427,68 @@ export default function Suppliers() {
     }, 0);
   }, [billItems, currency, exchangeRate]);
 
+  // 🌟 ຟັງຊັນກົດແກ້ໄຂບິນຈາກຕາຕະລາງ (Edit Entry)
+  const handleStartEditEntry = (entry: any) => {
+    setEditingEntryId(entry.id);
+    setCustomBillNo(entry.billNo || '');
+    setBillDate(entry.date || format(new Date(), 'yyyy-MM-dd'));
+    setBillTime(entry.time || format(new Date(), 'HH:mm'));
+    setSupplier(entry.supplier || 'CHANHOM');
+    setCategory(entry.category || 'purchasing');
+    setPaymentMethod(entry.paymentMethod || 'Onepay');
+    setCurrency(entry.currency || 'LAK');
+    setExchangeRate(entry.exchangeRate || 1);
+    setBillImageBase64(entry.billImageUrl || '');
+    setBillRemark(entry.billRemark || entry.remark || '');
+
+    const matchedProd = products.find(p => p.id === entry.productId);
+    const itemTotalOrig = entry.totalPriceOriginal !== undefined 
+      ? entry.totalPriceOriginal 
+      : (entry.priceOriginal || 0) * (entry.quantity || 1);
+
+    setBillItems([
+      {
+        id: 'item-edit-' + entry.id,
+        productId: entry.productId || '',
+        productSearch: matchedProd?.name || '',
+        unit: entry.unit || 'UNIT',
+        priceMode: entry.priceMode || 'total',
+        priceOriginal: entry.priceMode === 'total' ? itemTotalOrig : (entry.priceOriginal || 0),
+        displayPrice: (entry.priceMode === 'total' ? itemTotalOrig : (entry.priceOriginal || 0)).toLocaleString(),
+        quantity: entry.quantity || 1,
+        quantityPerUnit: entry.quantityPerUnit || 1,
+        remark: entry.remark || '',
+        isDropdownOpen: false
+      }
+    ]);
+
+    setEntryMode('single');
+    // ເລື່ອນຂຶ້ນໄປຫາຟອມຢ່າງລຽບນຽນ
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  // ຍົກເລີກການແກ້ໄຂ
+  const handleCancelEdit = () => {
+    setEditingEntryId(null);
+    setCustomBillNo('');
+    setBillImageBase64('');
+    setBillRemark('');
+    setBillItems([{
+      id: 'item-' + Date.now(),
+      productId: '',
+      productSearch: '',
+      unit: 'UNIT',
+      priceMode: 'total',
+      priceOriginal: 0,
+      displayPrice: '',
+      quantity: 1,
+      quantityPerUnit: 1,
+      remark: '',
+      isDropdownOpen: false
+    }]);
+  };
+
+  // 🌟 ບັນທຶກບິນ (ຮອງຮັບທັງສ້າງໃໝ່ ແລະ ອັບເດດແກ້ໄຂຍ້ອນຫຼັງ)
   const handleSaveBillBatch = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!supplier) {
@@ -442,11 +505,11 @@ export default function Suppliers() {
 
     try {
       setSaveLoading(true);
-      const batchGroupId = 'bill_' + Date.now();
       const finalRate = currency === 'LAK' ? 1 : (Number(exchangeRate) || 1);
 
-      for (let i = 0; i < billItems.length; i++) {
-        const item = billItems[i];
+      // ຖ້າເປັນໂໝດແກ້ໄຂບິນເກົ່າ (Update existing entry)
+      if (editingEntryId) {
+        const item = billItems[0];
         const qty = Number(item.quantity) || 1;
         const qtyPerUnit = Number(item.quantityPerUnit) || 1;
         let singlePriceOriginal = Number(item.priceOriginal) || 0;
@@ -458,12 +521,10 @@ export default function Suppliers() {
         const calculatedPriceLAK = singlePriceOriginal * finalRate;
         const totalOriginal = item.priceMode === 'total' ? Number(item.priceOriginal) : singlePriceOriginal * qty;
         const totalLAK = totalOriginal * finalRate;
-        const imageToSave = (i === 0) ? (billImageBase64 || '') : '';
 
-        await addDoc(collection(db, 'supplierPrices'), {
+        await updateDoc(doc(db, 'supplierPrices', editingEntryId), {
           billNo: generatedBillNo,
-          batchGroupId,
-          billImageUrl: imageToSave,
+          billImageUrl: billImageBase64 || '',
           billRemark: billRemark.trim(),
           productId: item.productId,
           supplier,
@@ -482,28 +543,64 @@ export default function Suppliers() {
           date: billDate,
           time: billTime,
           priceMode: item.priceMode,
-          createdAt: serverTimestamp(),
-          userId: auth.currentUser?.uid || 'admin',
-          userEmail: auth.currentUser?.email || 'admin@example.com',
+          updatedAt: serverTimestamp(),
+          branchId: selectedBranch || 'branch_1'
         });
-      }
 
-      alert('ບັນທຶກເລກບິນ ' + generatedBillNo + ' ສຳເລັດ!');
-      setBillImageBase64('');
-      setBillRemark('');
-      setBillItems([{
-        id: 'item-' + Date.now(),
-        productId: '',
-        productSearch: '',
-        unit: 'UNIT',
-        priceMode: 'total',
-        priceOriginal: 0,
-        displayPrice: '',
-        quantity: 1,
-        quantityPerUnit: 1,
-        remark: '',
-        isDropdownOpen: false
-      }]);
+        alert('✅ ແກ້ໄຂໃບບິນ ' + generatedBillNo + ' ສຳເລັດແລ້ວ!');
+        handleCancelEdit();
+      } else {
+        // ໂໝດສ້າງບິນໃໝ່ (Create new entries)
+        const batchGroupId = 'bill_' + Date.now();
+
+        for (let i = 0; i < billItems.length; i++) {
+          const item = billItems[i];
+          const qty = Number(item.quantity) || 1;
+          const qtyPerUnit = Number(item.quantityPerUnit) || 1;
+          let singlePriceOriginal = Number(item.priceOriginal) || 0;
+
+          if (item.priceMode === 'total') {
+            singlePriceOriginal = Number(item.priceOriginal) / qty;
+          }
+
+          const calculatedPriceLAK = singlePriceOriginal * finalRate;
+          const totalOriginal = item.priceMode === 'total' ? Number(item.priceOriginal) : singlePriceOriginal * qty;
+          const totalLAK = totalOriginal * finalRate;
+
+          const imageToSave = (i === 0) ? (billImageBase64 || '') : '';
+
+          await addDoc(collection(db, 'supplierPrices'), {
+            billNo: generatedBillNo,
+            batchGroupId,
+            billImageUrl: imageToSave,
+            billRemark: billRemark.trim(),
+            productId: item.productId,
+            supplier,
+            category,
+            paymentMethod,
+            currency,
+            exchangeRate: finalRate,
+            priceOriginal: singlePriceOriginal,
+            priceLAK: calculatedPriceLAK,
+            totalPriceOriginal: totalOriginal,
+            totalPriceLAK: totalLAK,
+            quantity: qty,
+            quantityPerUnit: qtyPerUnit,
+            unit: item.unit || 'UNIT',
+            remark: item.remark || '',
+            date: billDate,
+            time: billTime,
+            priceMode: item.priceMode,
+            createdAt: serverTimestamp(),
+            userId: auth.currentUser?.uid || 'admin',
+            userEmail: auth.currentUser?.email || 'admin@example.com',
+            branchId: selectedBranch || 'branch_1'
+          });
+        }
+
+        alert('✅ ບັນທຶກເລກບິນ ' + generatedBillNo + ' ສຳເລັດ!');
+        handleCancelEdit();
+      }
     } catch (err: any) {
       alert('Error saving to Firestore: ' + err.message);
     } finally {
@@ -522,7 +619,7 @@ export default function Suppliers() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-100/90 text-slate-800 p-4 sm:p-5 space-y-5">
+    <div className="min-h-screen bg-slate-100/90 text-slate-800 p-4 sm:p-5 space-y-5 font-sans">
 
       {/* Header Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 sm:p-5 bg-white rounded-3xl border border-slate-200/80 shadow-xs">
@@ -533,14 +630,14 @@ export default function Suppliers() {
           <div>
             <div className="flex items-center gap-2">
               <h2 className="text-lg sm:text-xl font-serif tracking-tight text-[#001839]">
-                {i18n.language === 'la' ? 'ລະບົບຈັດຊື້ & ຜູ້ສະໜອງ' : 'Supplier Procurement'}
+                {i18n.language === 'la' ? 'ລະບົບຈັດຊື້ & ຜູ້ສະໜອງ' : 'Supplier Procurement Desk'}
               </h2>
               <span className="px-2 py-0.5 rounded-full bg-[#001839] text-white text-[8.5px] font-serif uppercase tracking-[0.2em]">
                 Luxury Editorial
               </span>
             </div>
             <p className="text-xs text-slate-500 font-sans mt-0.5">
-              {products.length} ສິນຄ້າ • <span className="font-serif">Month {selectedLedgerMonth}</span> ({sortedSupplierPrices.length} ບິນ)
+              {products.length} ສິນຄ້າ • <span className="font-serif">Month {selectedLedgerMonth}</span> ({sortedSupplierPrices.length} ບິນ) • {selectedBranch === 'all' ? 'ທຸກສາຂາ' : selectedBranch}
             </p>
           </div>
         </div>
@@ -564,66 +661,77 @@ export default function Suppliers() {
         </div>
       </div>
 
-      {/* Grid: items-start ເພື່ອໃຫ້ຟອມຊ້າຍຍັບຕາມເນື້ອຫາຕົວຈິງ ບໍ່ຍືດຊ່ອງຫວ່າງຂາວ */}
+      {/* Grid: Form on Left + Ledger on Right */}
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-5 items-start">
 
-        {/* ================= LEFT: Bill Entry Form ================= */}
+        {/* ================= LEFT: Bill Entry & Edit Form ================= */}
         <div className="xl:col-span-5 bg-white p-5 sm:p-6 rounded-3xl border border-slate-200/80 shadow-xs flex flex-col space-y-4">
           
           <div className="flex justify-between items-center border-b border-slate-100 pb-3">
             <div>
-              <span className="px-2 py-0.5 bg-[#001839]/5 text-[#001839] rounded-full text-[8.5px] font-serif uppercase tracking-[0.2em]">
-                {entryMode === 'batch' ? 'Multi-Item Bill' : 'Single Entry'}
+              <span className={`px-2 py-0.5 rounded-full text-[8.5px] font-serif uppercase tracking-[0.2em] ${
+                editingEntryId ? 'bg-amber-100 text-amber-900 border border-amber-300' : 'bg-[#001839]/5 text-[#001839]'
+              }`}>
+                {editingEntryId ? 'EDITING BILL' : (entryMode === 'batch' ? 'Multi-Item Bill' : 'Single Entry')}
               </span>
               <h3 className="text-sm font-serif tracking-tight text-[#001839] uppercase mt-1 flex items-center gap-2">
                 <Receipt strokeWidth={1.4} className="w-4 h-4 text-emerald-700" />
-                <span>ບັນທຶກໃບບິນຈັດຊື້</span>
+                <span>{editingEntryId ? `ແກ້ໄຂໃບບິນ ${generatedBillNo}` : 'ບັນທຶກໃບບິນຈັດຊື້'}</span>
               </h3>
             </div>
 
-            <div className="flex bg-slate-100 p-1 rounded-xl">
+            {/* Cancel Button ຫຼື Batch Switcher */}
+            {editingEntryId ? (
               <button
                 type="button"
-                onClick={() => setEntryMode('batch')}
-                className={
-                  "px-2.5 py-1 text-[10px] font-serif uppercase tracking-wider rounded-lg cursor-pointer transition " +
-                  (entryMode === 'batch' ? "bg-[#001839] text-white shadow-xs" : "text-slate-500 hover:text-slate-800")
-                }
+                onClick={handleCancelEdit}
+                className="px-2.5 py-1 text-[10px] font-serif uppercase tracking-wider text-rose-600 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg flex items-center gap-1 cursor-pointer transition"
               >
-                Batch
+                <RotateCcw strokeWidth={1.4} className="w-3 h-3" />
+                <span>ຍົກເລີກການແກ້ໄຂ</span>
               </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setEntryMode('single');
-                  if (billItems.length > 1) setBillItems([billItems[0]]);
-                }}
-                className={
-                  "px-2.5 py-1 text-[10px] font-serif uppercase tracking-wider rounded-lg cursor-pointer transition " +
-                  (entryMode === 'single' ? "bg-[#001839] text-white shadow-xs" : "text-slate-500 hover:text-slate-800")
-                }
-              >
-                Single
-              </button>
-            </div>
+            ) : (
+              <div className="flex bg-slate-100 p-1 rounded-xl">
+                <button
+                  type="button"
+                  onClick={() => setEntryMode('batch')}
+                  className={`px-2.5 py-1 text-[10px] font-serif uppercase tracking-wider rounded-lg cursor-pointer transition ${
+                    entryMode === 'batch' ? "bg-[#001839] text-white shadow-xs" : "text-slate-500 hover:text-slate-800"
+                  }`}
+                >
+                  Batch
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEntryMode('single');
+                    if (billItems.length > 1) setBillItems([billItems[0]]);
+                  }}
+                  className={`px-2.5 py-1 text-[10px] font-serif uppercase tracking-wider rounded-lg cursor-pointer transition ${
+                    entryMode === 'single' ? "bg-[#001839] text-white shadow-xs" : "text-slate-500 hover:text-slate-800"
+                  }`}
+                >
+                  Single
+                </button>
+              </div>
+            )}
           </div>
 
           <form onSubmit={handleSaveBillBatch} className="space-y-4">
             
-            {/* Receipt Image Dropzone */}
+            {/* 🌟 Receipt Image Upload Dropzone (ຮອງຮັບທັງ Drag & Drop ແລະ Ctrl + V) */}
             <div 
               onDragOver={e => { e.preventDefault(); setIsDragging(true); }}
               onDragLeave={() => setIsDragging(false)}
               onDrop={e => { e.preventDefault(); setIsDragging(false); if (e.dataTransfer.files?.[0]) processImageFile(e.dataTransfer.files[0]); }}
-              className={
-                "p-3.5 rounded-2xl border border-dashed transition " +
-                (isDragging ? "border-[#001839] bg-slate-50" : "border-slate-300 bg-slate-50/60 hover:bg-slate-50")
-              }
+              className={`p-3.5 rounded-2xl border-2 border-dashed transition ${
+                isDragging ? 'border-[#001839] bg-slate-50' : 'border-slate-300 bg-slate-50/60 hover:bg-slate-50'
+              }`}
             >
               <div className="flex justify-between items-center mb-1.5">
-                <span className="text-[10px] font-serif tracking-wider uppercase text-[#001839] flex items-center gap-1.5">
+                <span className="text-[10px] font-serif tracking-wider uppercase text-[#001839] flex items-center gap-1.5 font-bold">
                   <ImageIcon strokeWidth={1.4} className="w-3.5 h-3.5 text-[#001839]" />
-                  <span>Receipt Image (Drop / Ctrl+V)</span>
+                  <span>{editingEntryId ? 'ປ່ຽນຮູບໃບບິນ (Drop / Ctrl + V)' : 'Receipt Image (Drop / Ctrl + V)'}</span>
                 </span>
                 {billImageBase64 && (
                   <button type="button" onClick={() => setBillImageBase64('')} className="text-[9.5px] font-serif text-rose-500 uppercase tracking-widest cursor-pointer hover:underline">Remove</button>
@@ -760,7 +868,7 @@ export default function Suppliers() {
             <div className="space-y-2 pt-1">
               <div className="flex justify-between items-center">
                 <label className="text-[10px] font-serif uppercase tracking-wider text-[#001839]">Items in this Bill</label>
-                {entryMode === 'batch' && (
+                {!editingEntryId && entryMode === 'batch' && (
                   <button
                     type="button"
                     onClick={addNewItemRow}
@@ -771,14 +879,14 @@ export default function Suppliers() {
                 )}
               </div>
 
-              {/* Items List (ໄຫຼລົງອັດຕະໂນມັດ) */}
+              {/* Items List */}
               <div className="space-y-2">
                 {billItems.map((item, index) => {
                   const selectedProd = products.find(p => p.id === item.productId);
 
                   return (
                     <div key={item.id} className="p-3 rounded-2xl bg-slate-50/90 border border-slate-200 space-y-2 relative">
-                      {billItems.length > 1 && (
+                      {!editingEntryId && billItems.length > 1 && (
                         <button
                           type="button"
                           onClick={() => removeItemRow(index)}
@@ -793,10 +901,9 @@ export default function Suppliers() {
                         <input 
                           type="text"
                           required
-                          className={
-                            "w-full h-8 px-2.5 pr-8 rounded-xl bg-white border text-xs outline-none cursor-pointer text-[#001839] " +
-                            (!item.productId && item.productSearch ? "border-amber-400" : "border-slate-200")
-                          }
+                          className={`w-full h-8 px-2.5 pr-8 rounded-xl bg-white border text-xs outline-none cursor-pointer text-[#001839] ${
+                            !item.productId && item.productSearch ? "border-amber-400" : "border-slate-200"
+                          }`}
                           placeholder="ຄົ້ນຫາຊື່ສິນຄ້າ..."
                           value={item.isDropdownOpen ? item.productSearch : (selectedProd?.name || item.productSearch)}
                           onFocus={() => updateItemRow(index, { isDropdownOpen: true })}
@@ -895,7 +1002,7 @@ export default function Suppliers() {
               />
             </div>
 
-            {/* 🌟 TOTAL CARD & BUTTON: ຍັບຂຶ້ນມາຊິດກ້ອງ Remark ທັນທີ ບໍ່ມີຊ່ອງຫວ່າງຂາວ! */}
+            {/* Total Card & Submit Button */}
             <div className="space-y-2.5 pt-1">
               <div className="p-3.5 bg-[#001839] text-white rounded-2xl flex justify-between items-center shadow-xs">
                 <div>
@@ -910,14 +1017,14 @@ export default function Suppliers() {
                 className="w-full h-10 bg-[#001839] hover:bg-[#00285d] text-white font-serif text-xs uppercase tracking-widest rounded-2xl shadow-xs cursor-pointer transition flex items-center justify-center gap-2 disabled:opacity-50"
               >
                 <CheckCircle2 strokeWidth={1.4} className="w-4 h-4 text-emerald-400" />
-                <span>{saveLoading ? 'Saving...' : 'ບັນທຶກໃບບິນຈັດຊື້ (' + generatedBillNo + ')'}</span>
+                <span>{saveLoading ? 'Processing...' : (editingEntryId ? `ບັນທຶກການແກ້ໄຂ (${generatedBillNo})` : `ບັນທຶກໃບບິນຈັດຊື້ (${generatedBillNo})`)}</span>
               </button>
             </div>
 
           </form>
         </div>
 
-        {/* ================= RIGHT: Active Procurement Ledger ================= */}
+        {/* ================= RIGHT: Active Procurement Ledger Table ================= */}
         <div className="xl:col-span-7 bg-white rounded-3xl border border-slate-200/80 shadow-xs overflow-hidden flex flex-col">
           
           <div className="p-4 border-b border-slate-100 space-y-3 shrink-0">
@@ -970,7 +1077,7 @@ export default function Suppliers() {
 
                 <div className="flex items-center gap-1.5 px-3 py-1 bg-slate-50 border border-slate-200 rounded-xl text-xs font-serif text-[#001839]">
                   <Calendar strokeWidth={1.4} className="w-3.5 h-3.5 text-[#001839]" />
-                  <span>{LAO_MONTHS[currentDate.getMonth()] + ' ' + currentDate.getFullYear()}</span>
+                  <span>{LAO_MONTHS[currentDate.getMonth()]} {currentDate.getFullYear()}</span>
                 </div>
 
                 <button
@@ -1076,7 +1183,7 @@ export default function Suppliers() {
                             <button
                               onClick={() => setPreviewImageUrl(p.billImageUrl)}
                               className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 text-[#001839] inline-flex items-center justify-center cursor-pointer transition border border-slate-200"
-                              title="ເບິ່ງຮູບ"
+                              title="ເບິ່ງຮູບໃບບິນ"
                             >
                               <Eye strokeWidth={1.4} className="w-3.5 h-3.5" />
                             </button>
@@ -1085,14 +1192,24 @@ export default function Suppliers() {
                           )}
                         </td>
 
+                        {/* 🌟 ປຸ່ມຈັດການ: ມີທັງ Edit (ດິນສໍ) ແລະ Delete (ຖັງຂີ້ເຫຍື້ອ) */}
                         <td className="p-3 text-center pr-3 whitespace-nowrap">
-                          <button
-                            onClick={() => handleDeleteEntry(p.id)}
-                            className="p-1 text-slate-400 hover:text-rose-500 rounded-lg cursor-pointer transition"
-                            title="Delete"
-                          >
-                            <Trash2 strokeWidth={1.4} className="w-3.5 h-3.5" />
-                          </button>
+                          <div className="flex items-center justify-center gap-1">
+                            <button
+                              onClick={() => handleStartEditEntry(p)}
+                              className="p-1 text-slate-400 hover:text-[#001839] rounded-lg cursor-pointer transition"
+                              title="ແກ້ໄຂບິນ ຫຼື ອັບໂຫຼດຮູບໃໝ່"
+                            >
+                              <Edit3 strokeWidth={1.4} className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteEntry(p.id)}
+                              className="p-1 text-slate-400 hover:text-rose-500 rounded-lg cursor-pointer transition"
+                              title="ລຶບລາຍການນີ້"
+                            >
+                              <Trash2 strokeWidth={1.4} className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     );
@@ -1129,7 +1246,7 @@ export default function Suppliers() {
 
       </div>
 
-      {/* Modals: Suppliers & Product & Zoom */}
+      {/* Modals: Suppliers Directory & Product Catalog & Full Image Zoom */}
       {showSupplierModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
           <div className="bg-white w-full max-w-md rounded-3xl p-5 shadow-2xl border border-slate-200 space-y-4">
@@ -1206,6 +1323,7 @@ export default function Suppliers() {
         </div>
       )}
 
+      {/* Preview Big Image Modal */}
       {previewImageUrl && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs">
           <div className="bg-white p-4 rounded-3xl max-w-2xl max-h-[90vh] flex flex-col gap-2 border border-slate-200 shadow-2xl">
