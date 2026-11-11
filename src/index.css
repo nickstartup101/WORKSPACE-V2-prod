@@ -1,15 +1,11 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-
-/* ຕັ້ງຄ່າ Font ໂດຍກົງ ບໍ່ຜ່ານ @import url */
+//* ບັງຄັບ Font ທົ່ວລະບົບ */
 .font-serif {
-  font-family: 'DM Serif Display', Georgia, serif;
+  font-family: 'DM Serif Display', Georgia, serif !important;
 }
 
-body {
-  font-family: 'Noto Sans Lao', system-ui, -apple-system, sans-serif;
+body, .font-sans {
+  font-family: 'Noto Sans Lao', system-ui, -apple-system, sans-serif !important;
+  background-color: #f1f5f9;
   margin: 0;
   padding: 0;
-  background-color: #f1f5f9;
 }
