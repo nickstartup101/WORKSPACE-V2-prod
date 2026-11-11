@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { auth, db } from './firebase';
 import { signOut, onAuthStateChanged, User } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, onSnapshot } from 'firebase/firestore';
 import { 
   LayoutDashboard, 
   BarChart3, 
@@ -33,12 +33,28 @@ export default function App() {
   const { i18n } = useTranslation();
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [userRole, setUserRole] = useState<'admin' | 'manager' | 'staff'>('admin');
-  const [activeTab, setActiveTab] = useState<TabType>('suppliers');
-  const [selectedBranch, setSelectedBranch] = useState<string>('ສາຂາ 1 (ດອນໜູນ)');
+  const [activeTab, setActiveTab] = useState<TabType>('dashboard');
+  
+  // Multi-Branch State (ດຶງສົດຈາກ Firestore settings/branch_list)
+  const [branches, setBranches] = useState<any[]>([
+    { id: 'branch_1', name: 'ສາຂາ 1 (ດອນໜູນ)' },
+    { id: 'branch_2', name: 'ສາຂາ 2 (ໂພນຕ້ອງ)' }
+  ]);
+  const [selectedBranch, setSelectedBranch] = useState<string>('branch_1');
   const [isDarkMode, setIsDarkMode] = useState<boolean>(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
 
-  // 1. ກວດສອບສິດຜູ້ໃຊ້ຈາກ Firebase Auth & Firestore Permissions
+  // 1. ດຶງລາຍຊື່ສາຂາຈາກ Firestore
+  useEffect(() => {
+    const unsubBranch = onSnapshot(doc(db, 'settings', 'branch_list'), (snap) => {
+      if (snap.exists() && Array.isArray(snap.data()?.branches)) {
+        setBranches(snap.data().branches);
+      }
+    });
+    return () => unsubBranch();
+  }, []);
+
+  // 2. ກວດສອບສິດຜູ້ໃຊ້ (RBAC)
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       setCurrentUser(user);
@@ -49,16 +65,15 @@ export default function App() {
             const matched = permSnap.data().users.find((u: any) => u.email === user.email.toLowerCase());
             if (matched) {
               setUserRole(matched.role);
-              // ຖ້າເປັນ Staff ໃຫ້ຕັ້ງໜ້າເລີ່ມຕົ້ນເປັນ suppliers
               if (matched.role === 'staff') {
-                setActiveTab('suppliers');
+                setActiveTab('financials');
               }
               return;
             }
           }
         } catch (err) {}
       }
-      setUserRole('admin'); // Default ຖ້າບໍ່ພົບ
+      setUserRole('admin');
     });
     return () => unsubscribe();
   }, []);
@@ -80,21 +95,20 @@ export default function App() {
     localStorage.setItem('i18nextLng', nextLang);
   };
 
-  // 2. ລາຍການເມນູ ພ້ອມກຳນົດສິດ (Roles allowed)
   const allNavItems = [
     {
       id: 'dashboard' as TabType,
       labelLao: 'ແດຊບອດ (Overview)',
       labelEng: 'Dashboard',
       icon: LayoutDashboard,
-      roles: ['admin', 'manager'], // Staff ບໍ່ເຫັນ!
+      roles: ['admin', 'manager'],
     },
     {
       id: 'reports' as TabType,
       labelLao: 'ບົດລາຍງານການເງິນ',
       labelEng: 'Financial Reports',
       icon: BarChart3,
-      roles: ['admin'], // ສະເພາະ Admin ເທົ່ານັ້ນ!
+      roles: ['admin'],
     },
     {
       id: 'debts' as TabType,
@@ -108,38 +122,36 @@ export default function App() {
       labelLao: 'ລະບົບຈັດຊື້ & ຜູ້ສະໜອງ',
       labelEng: 'Supplier Procurement',
       icon: Truck,
-      roles: ['admin', 'manager', 'staff'], // Staff ເຂົ້າໄດ້
+      roles: ['admin', 'manager', 'staff'],
     },
     {
       id: 'financials' as TabType,
       labelLao: 'ລາຍຮັບ / ລາຍຈ່າຍ',
       labelEng: 'Cashflow & Financials',
       icon: ArrowLeftRight,
-      roles: ['admin', 'manager', 'staff'], // Staff ເຂົ້າໄດ້ (ມີ PIN)
+      roles: ['admin', 'manager', 'staff'],
     },
     {
       id: 'settings' as TabType,
       labelLao: 'ຕັ້ງຄ່າລະບົບ',
       labelEng: 'Settings',
       icon: SettingsIcon,
-      roles: ['admin'], // ສະເພາະ Admin ເທົ່ານັ້ນ!
+      roles: ['admin'],
     },
   ];
 
-  // ກັ່ນຕອງເມນູຕາມ Role ຕົວຈິງ
   const allowedNavItems = allNavItems.filter(item => item.roles.includes(userRole));
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-slate-100/90 text-slate-800 font-sans">
       
-      {/* SIDEBAR (w-[235px] ແຄບກະທັດຮັດ) */}
+      {/* SIDEBAR (w-[235px]) */}
       <aside className={`
         fixed inset-y-0 left-0 z-40 w-[235px] bg-[#001839] text-white flex flex-col justify-between border-r border-white/10 transition-transform duration-300 ease-in-out shrink-0
         lg:static lg:translate-x-0 ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}
       `}>
         
         <div>
-          {/* Brand Header */}
           <div className="p-4 border-b border-white/10 flex items-center justify-between">
             <div>
               <div className="flex items-center gap-1.5">
@@ -161,7 +173,6 @@ export default function App() {
             </button>
           </div>
 
-          {/* Nav Items ທີ່ຖືກກັ່ນຕອງສິດແລ້ວ */}
           <nav className="p-2.5 space-y-1 overflow-y-auto max-h-[calc(100vh-210px)]">
             {allowedNavItems.map((item) => {
               const Icon = item.icon;
@@ -197,7 +208,7 @@ export default function App() {
           </nav>
         </div>
 
-        {/* User Footer ສະແດງ Role ຕົວຈິງ */}
+        {/* User Footer */}
         <div className="p-3 border-t border-white/10 bg-[#00132e]/60 space-y-2.5">
           <div className="flex items-center gap-2.5 px-1.5">
             <div className="w-8 h-8 rounded-xl bg-orange-500 text-white font-serif text-sm font-bold flex items-center justify-center shrink-0 border border-orange-400/30">
@@ -240,6 +251,7 @@ export default function App() {
               <Menu strokeWidth={1.4} className="w-5 h-5" />
             </button>
 
+            {/* Dynamic Branch Selector Dropdown */}
             <div className="flex items-center gap-2 px-3 py-1 bg-slate-50 border border-slate-200 rounded-xl text-xs text-[#001839]">
               <Store strokeWidth={1.4} className="w-3.5 h-3.5 text-[#001839]" />
               <select 
@@ -247,8 +259,10 @@ export default function App() {
                 onChange={(e) => setSelectedBranch(e.target.value)}
                 className="bg-transparent font-medium cursor-pointer focus:outline-none"
               >
-                <option value="ສາຂາ 1 (ດອນໜູນ)">ສາຂາ 1 (ດອນໜູນ)</option>
-                <option value="ສາຂາ 2 (ໂພນຕ້ອງ)">ສາຂາ 2 (ໂພນຕ້ອງ)</option>
+                {branches.map(b => (
+                  <option key={b.id} value={b.id}>{b.name}</option>
+                ))}
+                <option value="all">🌐 ທຸກສາຂາ (All Branches Combined)</option>
               </select>
             </div>
           </div>
@@ -275,13 +289,13 @@ export default function App() {
           </div>
         </header>
 
-        {/* Dynamic Screen View */}
+        {/* Dynamic Screen View ສົ່ງ selectedBranch ໃຫ້ທຸກ Component */}
         <main className="flex-1 overflow-y-auto">
-          {activeTab === 'dashboard' && <Dashboard />}
+          {activeTab === 'dashboard' && <Dashboard selectedBranch={selectedBranch} />}
           {activeTab === 'reports' && <FinanceReport />}
           {activeTab === 'debts' && <DebtLedger />}
           {activeTab === 'suppliers' && <Suppliers />}
-          {activeTab === 'financials' && <Financials />}
+          {activeTab === 'financials' && <Financials appConfig={{ masterApprovalPin: '1234' }} selectedBranch={selectedBranch} />}
           {activeTab === 'settings' && <Settings />}
         </main>
 
