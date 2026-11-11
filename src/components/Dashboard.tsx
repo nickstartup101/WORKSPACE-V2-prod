@@ -1,99 +1,121 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '../firebase';
-import { collection, onSnapshot } from 'firebase/firestore';
+import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
 import { 
   TrendingUp, TrendingDown, Percent, ArrowUpRight, 
-  Activity, Wallet, CreditCard, Building2, Calendar
+  Activity, Wallet, CreditCard, Building2, DollarSign, Calendar
 } from 'lucide-react';
-import { format, subDays, subMonths } from 'date-fns';
+import { format, subDays, parseISO, isSameMonth } from 'date-fns';
 
-const normalizeMethod = (method: string = ''): 'cash' | 'onepay' | 'ldb' => {
-  const m = method.toLowerCase();
-  if (m.includes('onepay') || m.includes('bcel') || m.includes('ໂອນ')) return 'onepay';
-  if (m.includes('ldb')) return 'ldb';
-  return 'cash';
+export type PaymentChannel = 'Cash' | 'Onepay' | 'LDB';
+
+const normalizeChannel = (src?: string): PaymentChannel => {
+  if (!src) return 'Cash';
+  const s = String(src).toLowerCase();
+  if (s.includes('ldb')) return 'LDB';
+  if (s.includes('onepay') || s.includes('bcel') || s.includes('ໂອນ')) return 'Onepay';
+  return 'Cash';
 };
 
-export default function Dashboard() {
-  const [filterPeriod, setFilterPeriod] = useState<'all' | 'month' | 'prev_month'>('all');
-  const [loading, setLoading] = useState<boolean>(true);
+export default function Dashboard({ selectedBranch }: { selectedBranch?: string }) {
+  const [filterPeriod, setFilterPeriod] = useState<'month' | 'all'>('month');
   const [transactions, setTransactions] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  // ດຶງຂໍ້ມູນຈາກ Cashflow (transactions) ບ່ອນດຽວ 100%
+  // ດຶງຂໍ້ມູນ Transactions (Cashflow) ບ່ອນດຽວ
   useEffect(() => {
     setLoading(true);
-    const unsub = onSnapshot(collection(db, 'transactions'), (snap) => {
-      setTransactions(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    const qAll = query(collection(db, 'transactions'), orderBy('date', 'desc'));
+    const unsub = onSnapshot(qAll, (snap) => {
+      const all = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      // ກັ່ນຕອງຕາມສາຂາ
+      const branchId = selectedBranch || 'branch_1';
+      const branchFiltered = branchId === 'all' 
+        ? all 
+        : all.filter((tx: any) => (tx.branchId || 'branch_1') === branchId);
+      setTransactions(branchFiltered);
       setLoading(false);
     });
     return () => unsub();
-  }, []);
+  }, [selectedBranch]);
 
-  const currentMonthStr = useMemo(() => format(new Date(), 'yyyy-MM'), []);
-  const prevMonthStr = useMemo(() => format(subMonths(new Date(), 1), 'yyyy-MM'), []);
+  // ຄິດໄລ່ຕົວເລກຕາມສູດດຽວກັນກັບ Financials.tsx ເປະ
+  const financialSummary = useMemo(() => {
+    const now = new Date();
 
-  const filteredTx = useMemo(() => {
-    if (filterPeriod === 'month') {
-      return transactions.filter(t => (t.date || '').startsWith(currentMonthStr));
-    }
-    if (filterPeriod === 'prev_month') {
-      return transactions.filter(t => (t.date || '').startsWith(prevMonthStr));
-    }
-    return transactions;
-  }, [transactions, filterPeriod, currentMonthStr, prevMonthStr]);
-
-  // 1. Core KPIs ຄິດໄລ່ຈາກ Cashflow
-  const totalRevenue = useMemo(() => {
-    return filteredTx
-      .filter(t => t.type === 'income' || t.category === 'revenue' || t.category === 'sales')
-      .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
-  }, [filteredTx]);
-
-  const totalCOGS = useMemo(() => {
-    return filteredTx
-      .filter(t => t.type === 'expense' && (t.category === 'purchasing' || t.category === 'cogs'))
-      .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
-  }, [filteredTx]);
-
-  const totalOPEX = useMemo(() => {
-    return filteredTx
-      .filter(t => t.type === 'expense' && t.category !== 'purchasing' && t.category !== 'cogs' && t.category !== 'dividend' && t.category !== 'ປັນຜົນ')
-      .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
-  }, [filteredTx]);
-
-  const grossProfit = totalRevenue - totalCOGS;
-  const grossMargin = totalRevenue > 0 ? ((grossProfit / totalRevenue) * 100).toFixed(1) : '0.0';
-  const netProfit = totalRevenue - (totalCOGS + totalOPEX);
-
-  // 2. ຍອດເງິນ Cash, OnePay, LDB ດຶງຈາກ Cashflow ໂດຍກົງ
-  const channelTotals = useMemo(() => {
-    let cashIn = 0, cashOut = 0;
-    let onepayIn = 0, onepayOut = 0;
-    let ldbIn = 0, ldbOut = 0;
-
-    filteredTx.forEach(t => {
-      const amt = Number(t.amount) || 0;
-      const m = normalizeMethod(t.paymentMethod || t.method);
-      if (t.type === 'income' || t.category === 'revenue' || t.category === 'sales') {
-        if (m === 'cash') cashIn += amt;
-        else if (m === 'onepay') onepayIn += amt;
-        else if (m === 'ldb') ldbIn += amt;
-      } else {
-        if (m === 'cash') cashOut += amt;
-        else if (m === 'onepay') onepayOut += amt;
-        else if (m === 'ldb') ldbOut += amt;
+    const activeList = transactions.filter(tx => {
+      if (filterPeriod === 'all') return true;
+      if (!tx.date) return true;
+      try {
+        const d = parseISO(tx.date);
+        return isSameMonth(d, now);
+      } catch {
+        return true;
       }
     });
 
-    return {
-      cashNet: cashIn - cashOut,
-      onepayNet: onepayIn - onepayOut,
-      ldbNet: ldbIn - ldbOut,
-      totalNet: (cashIn + onepayIn + ldbIn) - (cashOut + onepayOut + ldbOut)
-    };
-  }, [filteredTx]);
+    let totalRevenue = 0;
+    let totalPurchasing = 0;
+    let totalOPEX = 0;
 
-  // 3. 7-Day Dynamics ຈາກ Cashflow
+    let cashIncome = 0, cashExpense = 0;
+    let onepayIncome = 0, onepayExpense = 0;
+    let ldbIncome = 0, ldbExpense = 0;
+
+    activeList.forEach(tx => {
+      const amt = Number(tx.amount) || 0;
+      const ch = normalizeChannel(tx.source || tx.paymentMethod);
+      const isIncome = tx.type === 'income' || String(tx.category || '').toLowerCase() === 'sales';
+
+      if (isIncome) {
+        totalRevenue += amt;
+        if (ch === 'Cash') cashIncome += amt;
+        else if (ch === 'Onepay') onepayIncome += amt;
+        else if (ch === 'LDB') ldbIncome += amt;
+      } else {
+        const cat = String(tx.category || '').toLowerCase();
+        const isPurchasing = cat.includes('purchas') || cat.includes('supply') || cat.includes('ຊື້') || cat.includes('cogs');
+
+        if (isPurchasing) totalPurchasing += amt;
+        else if (cat !== 'dividend' && cat !== 'ປັນຜົນ') totalOPEX += amt;
+
+        if (ch === 'Cash') cashExpense += amt;
+        else if (ch === 'Onepay') onepayExpense += amt;
+        else if (ch === 'LDB') ldbExpense += amt;
+      }
+    });
+
+    const totalExpenses = totalPurchasing + totalOPEX;
+    const grossProfit = totalRevenue - totalPurchasing;
+    const grossMarginPercent = totalRevenue > 0 ? (grossProfit / totalRevenue) * 100 : 0;
+    const netProfit = totalRevenue - totalExpenses;
+
+    const cashNet = cashIncome - cashExpense;
+    const onepayNet = onepayIncome - onepayExpense;
+    const ldbNet = ldbIncome - ldbExpense;
+    const totalNetCashflow = cashNet + onepayNet + ldbNet;
+
+    return {
+      totalRevenue,
+      totalPurchasing,
+      totalOPEX,
+      grossProfit,
+      grossMarginPercent,
+      netProfit,
+      cashNet,
+      cashIncome,
+      cashExpense,
+      onepayNet,
+      onepayIncome,
+      onepayExpense,
+      ldbNet,
+      ldbIncome,
+      ldbExpense,
+      totalNetCashflow
+    };
+  }, [transactions, filterPeriod]);
+
+  // 7-Day Dynamics Chart ຈາກ Cashflow
   const last7DaysData = useMemo(() => {
     const days = [];
     for (let i = 6; i >= 0; i--) {
@@ -102,7 +124,7 @@ export default function Dashboard() {
       const label = format(d, 'dd/MM');
 
       const dayInc = transactions
-        .filter(t => (t.date || '').startsWith(dateKey) && (t.type === 'income' || t.category === 'revenue' || t.category === 'sales'))
+        .filter(t => (t.date || '').startsWith(dateKey) && (t.type === 'income' || String(t.category || '').toLowerCase() === 'sales'))
         .reduce((s, t) => s + (Number(t.amount) || 0), 0);
 
       const dayExp = transactions
@@ -136,19 +158,27 @@ export default function Dashboard() {
               <h2 className="text-base font-serif tracking-tight text-[#001839] uppercase">
                 Executive Dashboard
               </h2>
-              <span className="px-2 py-0.5 rounded-full bg-[#001839]/5 text-[#001839] text-[9px] font-serif uppercase tracking-widest font-semibold">
-                ສາຂາ 1
+              <span className="px-2 py-0.5 rounded-full bg-[#001839]/5 text-[#001839] text-[8.5px] font-serif uppercase tracking-widest font-semibold">
+                {selectedBranch === 'all' ? 'ທຸກສາຂາ (All Branches)' : selectedBranch || 'ສາຂາ 1'}
               </span>
             </div>
             <p className="text-[10px] font-serif tracking-widest text-slate-400 uppercase mt-0.5 flex items-center gap-1.5">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              Cashflow Single-Source Connected ({filteredTx.length} Records)
+              Cashflow Synchronized ({transactions.length} Transactions)
             </p>
           </div>
         </div>
 
-        {/* Period Pills */}
+        {/* Filter Period Pills */}
         <div className="flex items-center bg-slate-100 p-1 rounded-2xl border border-slate-200/60">
+          <button
+            onClick={() => setFilterPeriod('month')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-serif uppercase tracking-wider transition ${
+              filterPeriod === 'month' ? 'bg-[#001839] text-white shadow-xs font-semibold' : 'text-slate-600'
+            }`}
+          >
+            ເດືອນນີ້ (This Month)
+          </button>
           <button
             onClick={() => setFilterPeriod('all')}
             className={`px-3 py-1.5 rounded-xl text-xs font-serif uppercase tracking-wider transition ${
@@ -157,93 +187,95 @@ export default function Dashboard() {
           >
             ທັງໝົດ (All-Time)
           </button>
-          <button
-            onClick={() => setFilterPeriod('month')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-serif uppercase tracking-wider transition ${
-              filterPeriod === 'month' ? 'bg-[#001839] text-white shadow-xs font-semibold' : 'text-slate-600'
-            }`}
-          >
-            ເດືອນນີ້
-          </button>
-          <button
-            onClick={() => setFilterPeriod('prev_month')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-serif uppercase tracking-wider transition ${
-              filterPeriod === 'prev_month' ? 'bg-[#001839] text-white shadow-xs font-semibold' : 'text-slate-600'
-            }`}
-          >
-            ເດືອນກ່ອນ
-          </button>
         </div>
       </div>
 
       {/* Row 1: KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5">
-        
         <div className="p-4 bg-white rounded-3xl border border-slate-200/80 shadow-xs space-y-2">
           <span className="text-[9.5px] font-serif uppercase tracking-wider text-slate-400">Total Revenue</span>
-          <h3 className="text-xl font-serif tracking-tight text-emerald-800">{Math.round(totalRevenue).toLocaleString()} ₭</h3>
+          <h3 className="text-xl font-serif tracking-tight text-emerald-800">{Math.round(financialSummary.totalRevenue).toLocaleString()} ₭</h3>
           <span className="text-[10px] text-slate-400">ຍອດຂາຍລວມຈາກ Cashflow</span>
         </div>
 
         <div className="p-4 bg-white rounded-3xl border border-slate-200/80 shadow-xs space-y-2">
           <span className="text-[9.5px] font-serif uppercase tracking-wider text-slate-400">Purchasing (COGS)</span>
-          <h3 className="text-xl font-serif tracking-tight text-rose-800">{Math.round(totalCOGS).toLocaleString()} ₭</h3>
+          <h3 className="text-xl font-serif tracking-tight text-rose-800">{Math.round(financialSummary.totalPurchasing).toLocaleString()} ₭</h3>
           <span className="text-[10px] text-slate-400">ຕົ້ນທຶນຈັດຊື້ & ວັດຖຸດິບ</span>
         </div>
 
         <div className="p-4 bg-white rounded-3xl border border-slate-200/80 shadow-xs space-y-2">
           <div className="flex justify-between items-center">
             <span className="text-[9.5px] font-serif uppercase tracking-wider text-slate-400">Gross Margin</span>
-            <span className="text-xs font-serif text-[#001839] font-bold">{grossMargin}%</span>
+            <span className="text-xs font-serif text-[#001839] font-bold">{financialSummary.grossMarginPercent.toFixed(1)}%</span>
           </div>
-          <h3 className="text-xl font-serif tracking-tight text-[#001839]">{Math.round(grossProfit).toLocaleString()} ₭</h3>
+          <h3 className="text-xl font-serif tracking-tight text-[#001839]">{Math.round(financialSummary.grossProfit).toLocaleString()} ₭</h3>
           <span className="text-[10px] text-slate-400">ກຳໄລຂັ້ນຕົ້ນ</span>
         </div>
 
         <div className="p-4 bg-emerald-50/70 rounded-3xl border border-emerald-200/70 shadow-xs space-y-2">
-          <span className="text-[9.5px] font-serif uppercase tracking-wider text-emerald-900 font-semibold">Operating Net Profit</span>
-          <h3 className="text-xl font-serif tracking-tight text-emerald-900 font-semibold">{Math.round(netProfit).toLocaleString()} ₭</h3>
-          <span className="text-[10px] text-emerald-700/80">ກຳໄລສຸດທິ (OPEX: {Math.round(totalOPEX).toLocaleString()} ₭)</span>
+          <span className="text-[9.5px] font-serif uppercase tracking-wider text-emerald-900 font-semibold">Net Operating Profit</span>
+          <h3 className="text-xl font-serif tracking-tight text-emerald-900 font-semibold">{Math.round(financialSummary.netProfit).toLocaleString()} ₭</h3>
+          <span className="text-[10px] text-emerald-700/80">ກຳໄລສຸດທິ (OPEX: {Math.round(financialSummary.totalOPEX).toLocaleString()} ₭)</span>
         </div>
 
         <div className="p-4 bg-white rounded-3xl border border-slate-200/80 shadow-xs space-y-2">
           <span className="text-[9.5px] font-serif uppercase tracking-wider text-slate-400">Operational OPEX</span>
-          <h3 className="text-xl font-serif tracking-tight text-[#001839]">{Math.round(totalOPEX).toLocaleString()} ₭</h3>
+          <h3 className="text-xl font-serif tracking-tight text-[#001839]">{Math.round(financialSummary.totalOPEX).toLocaleString()} ₭</h3>
           <span className="text-[10px] text-slate-400">ຄ່າເຊົ່າ, ເງິນເດືອນ, ບໍລິຫານ</span>
         </div>
-
       </div>
 
-      {/* Row 2: ຍອດເງິນແຍກຊ່ອງທາງ (Cash vs OnePay vs LDB) ຈາກ Cashflow */}
+      {/* Row 2: 4 ບັດຍອດເງິນຄົງເຫຼືອແຍກຊ່ອງທາງ (ກົງກັບຮູບ Cashflow 100%) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
         <div className="p-4 bg-[#001839] text-white rounded-3xl shadow-xs space-y-1.5">
           <span className="text-[9.5px] font-serif uppercase tracking-[0.2em] text-white/60">Total Net Cashflow</span>
-          <h3 className="text-2xl font-serif tracking-tight">{Math.round(channelTotals.totalNet).toLocaleString()} ₭</h3>
-          <span className="text-[10px] text-white/40">ເງິນສົດ & ເງິນຝາກທຸກບັນຊີລວມກັນ</span>
+          <h3 className="text-2xl font-serif tracking-tight">{Math.round(financialSummary.totalNetCashflow).toLocaleString()} ₭</h3>
+          <p className="text-[9px] text-white/40 font-mono">
+            IN: +{Math.round(financialSummary.totalRevenue).toLocaleString()} | OUT: -{Math.round(financialSummary.totalPurchasing + financialSummary.totalOPEX).toLocaleString()}
+          </p>
         </div>
 
         <div className="p-4 bg-white rounded-3xl border border-slate-200/80 shadow-xs space-y-1.5">
-          <span className="text-[9.5px] font-serif uppercase tracking-wider text-slate-400 flex items-center gap-1.5 font-bold">
-            <span className="w-2 h-2 rounded-full bg-emerald-700" /> CASH (ເງິນສົດໃນຮ້ານ)
-          </span>
-          <h3 className="text-xl font-serif tracking-tight text-[#001839]">{Math.round(channelTotals.cashNet).toLocaleString()} ₭</h3>
-          <span className="text-[10px] text-slate-400">ຍອດເງິນສົດສຸດທິຈາກ Cashflow</span>
+          <div className="flex justify-between items-center">
+            <span className="text-[9.5px] font-serif uppercase tracking-wider text-slate-400 flex items-center gap-1.5 font-bold">
+              <span className="w-2 h-2 rounded-full bg-emerald-700" /> CASH IN HAND
+            </span>
+            <span className="text-[8.5px] font-serif px-2 py-0.5 bg-emerald-50 text-emerald-800 rounded font-bold uppercase">CASH</span>
+          </div>
+          <h3 className="text-xl font-serif tracking-tight text-[#001839]">{Math.round(financialSummary.cashNet).toLocaleString()} ₭</h3>
+          <div className="flex justify-between text-[9px] font-mono text-slate-400">
+            <span className="text-emerald-700 font-bold">+{Math.round(financialSummary.cashIncome).toLocaleString()}</span>
+            <span className="text-rose-700 font-bold">-{Math.round(financialSummary.cashExpense).toLocaleString()}</span>
+          </div>
         </div>
 
         <div className="p-4 bg-white rounded-3xl border border-slate-200/80 shadow-xs space-y-1.5">
-          <span className="text-[9.5px] font-serif uppercase tracking-wider text-slate-400 flex items-center gap-1.5 font-bold">
-            <span className="w-2 h-2 rounded-full bg-rose-700" /> BCEL ONEPAY (ໂອນ)
-          </span>
-          <h3 className="text-xl font-serif tracking-tight text-[#001839]">{Math.round(channelTotals.onepayNet).toLocaleString()} ₭</h3>
-          <span className="text-[10px] text-slate-400">ຍອດເງິນໂອນ OnePay ສຸດທິ</span>
+          <div className="flex justify-between items-center">
+            <span className="text-[9.5px] font-serif uppercase tracking-wider text-slate-400 flex items-center gap-1.5 font-bold">
+              <span className="w-2 h-2 rounded-full bg-rose-700" /> ONEPAY BALANCE
+            </span>
+            <span className="text-[8.5px] font-serif px-2 py-0.5 bg-rose-50 text-rose-800 rounded font-bold uppercase">ONEPAY</span>
+          </div>
+          <h3 className="text-xl font-serif tracking-tight text-[#001839]">{Math.round(financialSummary.onepayNet).toLocaleString()} ₭</h3>
+          <div className="flex justify-between text-[9px] font-mono text-slate-400">
+            <span className="text-emerald-700 font-bold">+{Math.round(financialSummary.onepayIncome).toLocaleString()}</span>
+            <span className="text-rose-700 font-bold">-{Math.round(financialSummary.onepayExpense).toLocaleString()}</span>
+          </div>
         </div>
 
         <div className="p-4 bg-white rounded-3xl border border-slate-200/80 shadow-xs space-y-1.5">
-          <span className="text-[9.5px] font-serif uppercase tracking-wider text-slate-400 flex items-center gap-1.5 font-bold">
-            <span className="w-2 h-2 rounded-full bg-blue-700" /> ທະນາຄານ LDB
-          </span>
-          <h3 className="text-xl font-serif tracking-tight text-[#001839]">{Math.round(channelTotals.ldbNet).toLocaleString()} ₭</h3>
-          <span className="text-[10px] text-slate-400">ຍອດເງິນໂອນ LDB ສຸດທິ</span>
+          <div className="flex justify-between items-center">
+            <span className="text-[9.5px] font-serif uppercase tracking-wider text-slate-400 flex items-center gap-1.5 font-bold">
+              <span className="w-2 h-2 rounded-full bg-blue-700" /> LDB BALANCE
+            </span>
+            <span className="text-[8.5px] font-serif px-2 py-0.5 bg-blue-50 text-blue-800 rounded font-bold uppercase">LDB</span>
+          </div>
+          <h3 className="text-xl font-serif tracking-tight text-[#001839]">{Math.round(financialSummary.ldbNet).toLocaleString()} ₭</h3>
+          <div className="flex justify-between text-[9px] font-mono text-slate-400">
+            <span className="text-emerald-700 font-bold">+{Math.round(financialSummary.ldbIncome).toLocaleString()}</span>
+            <span className="text-rose-700 font-bold">-{Math.round(financialSummary.ldbExpense).toLocaleString()}</span>
+          </div>
         </div>
       </div>
 
