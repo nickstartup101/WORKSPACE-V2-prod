@@ -3,13 +3,14 @@ import { auth, db } from '../firebase';
 import { 
   collection, addDoc, onSnapshot, 
   deleteDoc, doc, setDoc, updateDoc, serverTimestamp,
-  query, where, limit 
+  query, where, limit, getDocs
 } from 'firebase/firestore';
 import { 
   Plus, Trash2, Search, Download, 
   List, Receipt, Image as ImageIcon, Upload, Eye, X, Truck,
   Calendar, ChevronLeft, ChevronRight,
-  Store, Edit3, ImagePlus, CheckCircle2, RotateCcw
+  Store, Edit3, ImagePlus, CheckCircle2, RotateCcw,
+  Layers, Check, Sparkles
 } from 'lucide-react';
 import { format, subMonths, addMonths } from 'date-fns';
 import * as XLSX from 'xlsx';
@@ -104,11 +105,22 @@ export default function Suppliers({ selectedBranch = 'branch_1' }: { selectedBra
   const [prodFormImageBase64, setProdFormImageBase64] = useState('');
   const [prodSaving, setProdSaving] = useState(false);
 
+  // 🌟 Search in Product Manager
+  const [productSearchQuery, setProductSearchQuery] = useState('');
+
+  // 🌟 Product Merge Tool States
+  const [isMergeMode, setIsMergeMode] = useState(false);
+  const [selectedMergeProductIds, setSelectedMergeProductIds] = useState<string[]>([]);
+  const [showMergeConfirmModal, setShowMergeConfirmModal] = useState(false);
+  const [selectedMasterName, setSelectedMasterName] = useState('');
+  const [customMergeName, setCustomMergeName] = useState('');
+  const [mergeLoading, setMergeLoading] = useState(false);
+
   // Supplier form
   const [newSupName, setNewSupName] = useState('');
   const [newSupCode, setNewSupCode] = useState('');
 
-  // 🌟 Bill Form & Edit State (ລະບົບແກ້ໄຂບິນຍ້ອນຫຼັງ)
+  // Bill Form & Edit State
   const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
   const [customBillNo, setCustomBillNo] = useState<string>('');
   const [billDate, setBillDate] = useState<string>(format(new Date(), 'yyyy-MM-dd'));
@@ -152,7 +164,7 @@ export default function Suppliers({ selectedBranch = 'branch_1' }: { selectedBra
     return '#' + format(new Date(), 'ddMMyyyy') + 'OT';
   }, [billDate, supplier, suppliersList, editingEntryId, customBillNo]);
 
-  // Real-time Sync from Firestore
+  // Real-time Firestore Sync
   useEffect(() => {
     setIsLedgerLoading(true);
 
@@ -225,7 +237,19 @@ export default function Suppliers({ selectedBranch = 'branch_1' }: { selectedBra
     setCurrentDate(prev => addMonths(prev, 1));
   };
 
-  // Image Processing & Compression (< 80KB)
+  // Filtered Products for Catalog Search
+  const filteredCatalogProducts = useMemo(() => {
+    if (!productSearchQuery.trim()) return products;
+    const q = productSearchQuery.toLowerCase();
+    return products.filter(p => 
+      p.name?.toLowerCase().includes(q) ||
+      p.unit?.toLowerCase().includes(q) ||
+      p.packSize?.toLowerCase().includes(q) ||
+      p.sku?.toLowerCase().includes(q)
+    );
+  }, [products, productSearchQuery]);
+
+  // Image Processing & Compression
   const processImageFile = (blobOrFile: Blob | File) => {
     if (!blobOrFile) return;
     const reader = new FileReader();
@@ -265,7 +289,7 @@ export default function Suppliers({ selectedBranch = 'branch_1' }: { selectedBra
     reader.readAsDataURL(blobOrFile);
   };
 
-  // 🌟 Global Ctrl + V Paste Listener
+  // Global Ctrl + V Paste
   useEffect(() => {
     const handlePaste = (e: ClipboardEvent) => {
       const clipboard = e.clipboardData;
@@ -350,6 +374,72 @@ export default function Suppliers({ selectedBranch = 'branch_1' }: { selectedBra
     setProdFormImageBase64(prod.imageUrl || '');
   };
 
+  // 🌟 Toggle Merge Selection
+  const toggleSelectMergeProduct = (id: string) => {
+    setSelectedMergeProductIds(prev => 
+      prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
+    );
+  };
+
+  // 🌟 Open Merge Confirm Modal
+  const handleOpenMergeConfirm = () => {
+    if (selectedMergeProductIds.length < 2) {
+      alert('ກະລຸນາເລືອກສິນຄ້າຢ່າງໜ້ອຍ 2 ລາຍການເພື່ອທຳການ Merge!');
+      return;
+    }
+    const firstSelected = products.find(p => p.id === selectedMergeProductIds[0]);
+    setSelectedMasterName(firstSelected?.name || '');
+    setCustomMergeName(firstSelected?.name || '');
+    setShowMergeConfirmModal(true);
+  };
+
+  // 🌟 Execute Merge Process
+  const handleExecuteMerge = async () => {
+    if (selectedMergeProductIds.length < 2) return;
+    const finalName = customMergeName.trim() || selectedMasterName.trim();
+    if (!finalName) {
+      alert('ກະລຸນາລະບຸຊື່ສິນຄ້າຫຼັກ!');
+      return;
+    }
+
+    try {
+      setMergeLoading(true);
+      // ສິນຄ້າຫຼັກທີ່ຈະຮັກສາໄວ້
+      const masterId = selectedMergeProductIds[0];
+      const duplicateIds = selectedMergeProductIds.slice(1);
+      const masterProduct = products.find(p => p.id === masterId);
+
+      // 1. ອັບເດດຊື່ສິນຄ້າຫຼັກ
+      await updateDoc(doc(db, 'products', masterId), {
+        name: finalName,
+        updatedAt: serverTimestamp()
+      });
+
+      // 2. ໂອນປະຫວັດການຈັດຊື້ທັງໝົດໃນ supplierPrices ມາຫາ masterId
+      for (const dupId of duplicateIds) {
+        const qPrices = query(collection(db, 'supplierPrices'), where('productId', '==', dupId));
+        const snap = await getDocs(qPrices);
+        for (const priceDoc of snap.docs) {
+          await updateDoc(doc(db, 'supplierPrices', priceDoc.id), {
+            productId: masterId
+          });
+        }
+
+        // 3. ລຶບສິນຄ້າຊ້ຳຊ້ອນອອກ
+        await deleteDoc(doc(db, 'products', dupId));
+      }
+
+      alert(`✅ Merge ສິນຄ້າເປັນ "${finalName}" ແລະ ໂອນປະຫວັດການຈັດຊື້ສຳເລັດ 100%!`);
+      setShowMergeConfirmModal(false);
+      setIsMergeMode(false);
+      setSelectedMergeProductIds([]);
+    } catch (err: any) {
+      alert('Error merging: ' + err.message);
+    } finally {
+      setMergeLoading(false);
+    }
+  };
+
   const handleAddSupplier = async () => {
     if (!newSupName.trim()) return;
     const cleanCode = newSupCode.trim().toUpperCase() || newSupName.trim().slice(0, 2).toUpperCase();
@@ -427,7 +517,7 @@ export default function Suppliers({ selectedBranch = 'branch_1' }: { selectedBra
     }, 0);
   }, [billItems, currency, exchangeRate]);
 
-  // 🌟 ຟັງຊັນກົດແກ້ໄຂບິນຈາກຕາຕະລາງ (Edit Entry)
+  // Edit Bill Entry from Ledger
   const handleStartEditEntry = (entry: any) => {
     setEditingEntryId(entry.id);
     setCustomBillNo(entry.billNo || '');
@@ -463,11 +553,9 @@ export default function Suppliers({ selectedBranch = 'branch_1' }: { selectedBra
     ]);
 
     setEntryMode('single');
-    // ເລື່ອນຂຶ້ນໄປຫາຟອມຢ່າງລຽບນຽນ
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  // ຍົກເລີກການແກ້ໄຂ
   const handleCancelEdit = () => {
     setEditingEntryId(null);
     setCustomBillNo('');
@@ -488,7 +576,7 @@ export default function Suppliers({ selectedBranch = 'branch_1' }: { selectedBra
     }]);
   };
 
-  // 🌟 ບັນທຶກບິນ (ຮອງຮັບທັງສ້າງໃໝ່ ແລະ ອັບເດດແກ້ໄຂຍ້ອນຫຼັງ)
+  // 🌟 Save Bill Handler (ໃສ່ຮູບໃບບິນຕິດໄປກັບທຸກໆລາຍການ 100%)
   const handleSaveBillBatch = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!supplier) {
@@ -506,8 +594,9 @@ export default function Suppliers({ selectedBranch = 'branch_1' }: { selectedBra
     try {
       setSaveLoading(true);
       const finalRate = currency === 'LAK' ? 1 : (Number(exchangeRate) || 1);
+      // 🌟 ຮູບໃບບິນຈະຖືກໃຊ້ກັບທຸກລາຍການໃນບິນນີ້
+      const imageToAttach = billImageBase64 || '';
 
-      // ຖ້າເປັນໂໝດແກ້ໄຂບິນເກົ່າ (Update existing entry)
       if (editingEntryId) {
         const item = billItems[0];
         const qty = Number(item.quantity) || 1;
@@ -524,7 +613,7 @@ export default function Suppliers({ selectedBranch = 'branch_1' }: { selectedBra
 
         await updateDoc(doc(db, 'supplierPrices', editingEntryId), {
           billNo: generatedBillNo,
-          billImageUrl: billImageBase64 || '',
+          billImageUrl: imageToAttach,
           billRemark: billRemark.trim(),
           productId: item.productId,
           supplier,
@@ -550,9 +639,9 @@ export default function Suppliers({ selectedBranch = 'branch_1' }: { selectedBra
         alert('✅ ແກ້ໄຂໃບບິນ ' + generatedBillNo + ' ສຳເລັດແລ້ວ!');
         handleCancelEdit();
       } else {
-        // ໂໝດສ້າງບິນໃໝ່ (Create new entries)
         const batchGroupId = 'bill_' + Date.now();
 
+        // 🌟 ບັນທຶກທຸກລາຍການພ້ອມຕິດຮູບໃບບິນໃຫ້ທຸກໆສິນຄ້າ
         for (let i = 0; i < billItems.length; i++) {
           const item = billItems[i];
           const qty = Number(item.quantity) || 1;
@@ -567,12 +656,10 @@ export default function Suppliers({ selectedBranch = 'branch_1' }: { selectedBra
           const totalOriginal = item.priceMode === 'total' ? Number(item.priceOriginal) : singlePriceOriginal * qty;
           const totalLAK = totalOriginal * finalRate;
 
-          const imageToSave = (i === 0) ? (billImageBase64 || '') : '';
-
           await addDoc(collection(db, 'supplierPrices'), {
             billNo: generatedBillNo,
             batchGroupId,
-            billImageUrl: imageToSave,
+            billImageUrl: imageToAttach, // ຕິດຮູບໃຫ້ທຸກລາຍການ
             billRemark: billRemark.trim(),
             productId: item.productId,
             supplier,
@@ -598,7 +685,7 @@ export default function Suppliers({ selectedBranch = 'branch_1' }: { selectedBra
           });
         }
 
-        alert('✅ ບັນທຶກເລກບິນ ' + generatedBillNo + ' ສຳເລັດ!');
+        alert('✅ ບັນທຶກເລກບິນ ' + generatedBillNo + ' ສຳເລັດ (ໃບບິນຕິດໄປກັບທຸກລາຍການ)!');
         handleCancelEdit();
       }
     } catch (err: any) {
@@ -656,7 +743,7 @@ export default function Suppliers({ selectedBranch = 'branch_1' }: { selectedBra
             className="px-3.5 py-2 bg-[#001839] hover:bg-[#00285d] text-white rounded-xl text-xs font-serif uppercase tracking-wider flex items-center gap-1.5 shadow-sm cursor-pointer transition"
           >
             <List strokeWidth={1.4} className="w-3.5 h-3.5" />
-            <span>Products ({products.length})</span>
+            <span>Product Catalog ({products.length})</span>
           </button>
         </div>
       </div>
@@ -664,7 +751,7 @@ export default function Suppliers({ selectedBranch = 'branch_1' }: { selectedBra
       {/* Grid: Form on Left + Ledger on Right */}
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-5 items-start">
 
-        {/* ================= LEFT: Bill Entry & Edit Form ================= */}
+        {/* LEFT: Bill Entry & Edit Form */}
         <div className="xl:col-span-5 bg-white p-5 sm:p-6 rounded-3xl border border-slate-200/80 shadow-xs flex flex-col space-y-4">
           
           <div className="flex justify-between items-center border-b border-slate-100 pb-3">
@@ -680,7 +767,6 @@ export default function Suppliers({ selectedBranch = 'branch_1' }: { selectedBra
               </h3>
             </div>
 
-            {/* Cancel Button ຫຼື Batch Switcher */}
             {editingEntryId ? (
               <button
                 type="button"
@@ -719,7 +805,7 @@ export default function Suppliers({ selectedBranch = 'branch_1' }: { selectedBra
 
           <form onSubmit={handleSaveBillBatch} className="space-y-4">
             
-            {/* 🌟 Receipt Image Upload Dropzone (ຮອງຮັບທັງ Drag & Drop ແລະ Ctrl + V) */}
+            {/* Receipt Image Upload Dropzone */}
             <div 
               onDragOver={e => { e.preventDefault(); setIsDragging(true); }}
               onDragLeave={() => setIsDragging(false)}
@@ -1178,11 +1264,12 @@ export default function Suppliers({ selectedBranch = 'branch_1' }: { selectedBra
                           {Math.round(Number(p.totalPriceLAK || 0)).toLocaleString() + " ₭"}
                         </td>
 
+                        {/* Bill Image View Button */}
                         <td className="p-3 text-center whitespace-nowrap">
                           {p.billImageUrl ? (
                             <button
                               onClick={() => setPreviewImageUrl(p.billImageUrl)}
-                              className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 text-[#001839] inline-flex items-center justify-center cursor-pointer transition border border-slate-200"
+                              className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 text-[#001839] inline-flex items-center justify-center cursor-pointer transition border border-slate-200 shadow-2xs"
                               title="ເບິ່ງຮູບໃບບິນ"
                             >
                               <Eye strokeWidth={1.4} className="w-3.5 h-3.5" />
@@ -1192,7 +1279,7 @@ export default function Suppliers({ selectedBranch = 'branch_1' }: { selectedBra
                           )}
                         </td>
 
-                        {/* 🌟 ປຸ່ມຈັດການ: ມີທັງ Edit (ດິນສໍ) ແລະ Delete (ຖັງຂີ້ເຫຍື້ອ) */}
+                        {/* Edit & Delete Action */}
                         <td className="p-3 text-center pr-3 whitespace-nowrap">
                           <div className="flex items-center justify-center gap-1">
                             <button
@@ -1246,7 +1333,303 @@ export default function Suppliers({ selectedBranch = 'branch_1' }: { selectedBra
 
       </div>
 
-      {/* Modals: Suppliers Directory & Product Catalog & Full Image Zoom */}
+      {/* ================= MODAL: ຈັດການສິນຄ້າ & MERGE TOOL ================= */}
+      {showProductManager && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+          <div className="bg-white w-full max-w-3xl rounded-3xl p-5 sm:p-6 shadow-2xl border border-slate-200 space-y-4 max-h-[92vh] flex flex-col">
+            
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+              <div>
+                <h3 className="text-sm font-serif tracking-tight text-[#001839] uppercase font-bold flex items-center gap-2">
+                  <List strokeWidth={1.4} className="w-4 h-4 text-[#001839]" />
+                  <span>Product Inventory Catalog ({products.length})</span>
+                </h3>
+                <p className="text-[10px] text-slate-400">ຈັດການລາຍຊື່ສິນຄ້າ, ເພີ່ມຮູບ ແລະ Merge ສິນຄ້າທີ່ຊ້ຳຊ້ອນ</p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                {/* 🌟 ປຸ່ມເປີດໂໝດ MERGE ສິນຄ້າຊ້ຳຊ້ອນ */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsMergeMode(!isMergeMode);
+                    setSelectedMergeProductIds([]);
+                  }}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-serif uppercase tracking-wider flex items-center gap-1.5 transition cursor-pointer border ${
+                    isMergeMode 
+                      ? 'bg-amber-500 text-white border-amber-600 shadow-xs' 
+                      : 'bg-slate-50 hover:bg-slate-100 text-[#001839] border-slate-200'
+                  }`}
+                >
+                  <Layers strokeWidth={1.4} className="w-3.5 h-3.5" />
+                  <span>{isMergeMode ? 'ປິດໂໝດ Merge' : 'Merge ສິນຄ້າຊ້ຳ'}</span>
+                </button>
+
+                <button 
+                  onClick={() => { 
+                    setShowProductManager(false); 
+                    setEditingProductId(null);
+                    setIsMergeMode(false);
+                    setSelectedMergeProductIds([]);
+                  }} 
+                  className="p-1 text-slate-400 hover:text-slate-600 cursor-pointer"
+                >
+                  <X strokeWidth={1.4} className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Form ເພີ່ມ/ແກ້ໄຂສິນຄ້າ */}
+            {!isMergeMode && (
+              <form onSubmit={handleSaveProduct} className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200 space-y-2.5">
+                <div className="flex justify-between items-center">
+                  <span className="text-[10px] font-serif uppercase tracking-wider text-slate-500">
+                    {editingProductId ? 'ກຳລັງແກ້ໄຂສິນຄ້າ' : '+ ເພີ່ມສິນຄ້າໃໝ່ພ້ອມຮູບພາບ'}
+                  </span>
+                  {editingProductId && (
+                    <button 
+                      type="button" 
+                      onClick={() => { setEditingProductId(null); setProdFormName(''); setProdFormImageBase64(''); }}
+                      className="text-[10px] font-serif text-rose-500 uppercase tracking-wider cursor-pointer hover:underline"
+                    >
+                      Cancel Edit
+                    </button>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-12 gap-2.5 items-center">
+                  <div className="col-span-3">
+                    <input type="file" ref={prodImgInputRef} accept="image/*" onChange={e => e.target.files?.[0] && processProductImageFile(e.target.files[0])} className="hidden" id="pm-upload" />
+                    <label htmlFor="pm-upload" className="w-full h-20 rounded-xl border border-dashed border-slate-300 flex flex-col items-center justify-center cursor-pointer bg-white hover:bg-slate-50 transition overflow-hidden">
+                      {prodFormImageBase64 ? <img src={prodFormImageBase64} alt="" className="w-full h-full object-contain p-1" /> : <ImagePlus strokeWidth={1.4} className="w-4 h-4 text-[#001839]" />}
+                    </label>
+                  </div>
+                  <div className="col-span-9 space-y-1.5">
+                    <input type="text" required placeholder="ຊື່ສິນຄ້າ (ເຊັ່ນ: ນົມ Meiji 2000ml)..." value={prodFormName} onChange={e => setProdFormName(e.target.value)} className="w-full h-8 px-2.5 rounded-lg bg-white border border-slate-200 text-xs text-[#001839] outline-none" />
+                    <div className="flex gap-2">
+                      <input type="text" placeholder="ຂະໜາດ (1ແພັກ x 1500ml)" value={prodFormPackSize} onChange={e => setProdFormPackSize(e.target.value)} className="flex-1 h-8 px-2 rounded-lg bg-white border border-slate-200 text-xs text-[#001839] outline-none" />
+                      <input type="text" placeholder="UNIT" value={prodFormUnit} onChange={e => setProdFormUnit(e.target.value)} className="w-20 h-8 px-2 rounded-lg bg-white border border-slate-200 text-xs text-center font-serif text-[#001839] outline-none" />
+                      <button type="submit" disabled={prodSaving} className="px-4 h-8 bg-[#001839] text-white rounded-lg text-xs font-serif uppercase tracking-wider cursor-pointer shadow-xs transition">
+                        {prodSaving ? '...' : (editingProductId ? 'Save Edit' : '+ Add')}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </form>
+            )}
+
+            {/* 🌟 1. ຊ່ອງຄົ້ນຫາສິນຄ້າໃນຄັງ (Product Search Bar) */}
+            <div className="relative">
+              <input
+                type="text"
+                placeholder="ຄົ້ນຫາຊື່ສິນຄ້າ, ຫົວໜ່ວຍ ຫຼື ຂະໜາດ..."
+                value={productSearchQuery}
+                onChange={e => setProductSearchQuery(e.target.value)}
+                className="w-full h-9 pl-9 pr-8 rounded-xl bg-slate-50 border border-slate-200 text-xs text-[#001839] outline-none focus:border-[#001839] transition"
+              />
+              <Search strokeWidth={1.4} className="absolute left-3 top-2.5 w-4 h-4 text-slate-400 pointer-events-none" />
+              {productSearchQuery && (
+                <button onClick={() => setProductSearchQuery('')} className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600">
+                  <X strokeWidth={1.4} className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+
+            {/* ແຖບແຈ້ງເຕືອນໃນໂໝດ Merge */}
+            {isMergeMode && (
+              <div className="p-3 bg-amber-50 rounded-2xl border border-amber-200/80 flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <Sparkles strokeWidth={1.4} className="w-4 h-4 text-amber-700" />
+                  <span className="text-xs text-amber-900 font-serif">
+                    ເລືອກແລ້ວ: <strong>{selectedMergeProductIds.length}</strong> ລາຍການ
+                  </span>
+                </div>
+                {selectedMergeProductIds.length >= 2 && (
+                  <button
+                    type="button"
+                    onClick={handleOpenMergeConfirm}
+                    className="px-3.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-serif uppercase tracking-wider cursor-pointer shadow-xs transition"
+                  >
+                    ດຳເນີນການ Merge ({selectedMergeProductIds.length})
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* ລາຍຊື່ສິນຄ້າໃນ Catalog */}
+            <div className="flex-1 overflow-y-auto space-y-1.5 pr-1 min-h-[220px]">
+              {filteredCatalogProducts.length === 0 ? (
+                <p className="text-center text-xs text-slate-400 py-8 font-serif">ບໍ່ພົບສິນຄ້າທີ່ຄົ້ນຫາ</p>
+              ) : (
+                filteredCatalogProducts.map(p => {
+                  const isSelectedForMerge = selectedMergeProductIds.includes(p.id);
+
+                  return (
+                    <div 
+                      key={p.id} 
+                      className={`p-2.5 rounded-xl flex items-center justify-between border transition ${
+                        isSelectedForMerge 
+                          ? 'bg-amber-50/70 border-amber-300' 
+                          : 'bg-slate-50 hover:bg-slate-100/80 border-slate-100'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5">
+                        {/* Checkbox ສຳລັບໂໝດ Merge */}
+                        {isMergeMode && (
+                          <input
+                            type="checkbox"
+                            checked={isSelectedForMerge}
+                            onChange={() => toggleSelectMergeProduct(p.id)}
+                            className="w-4 h-4 rounded text-[#001839] cursor-pointer"
+                          />
+                        )}
+
+                        {p.imageUrl ? (
+                          <img src={p.imageUrl} alt="" className="w-8 h-8 object-contain rounded-md border border-slate-200 bg-white" />
+                        ) : (
+                          <div className="w-8 h-8 rounded-md bg-slate-200 flex items-center justify-center text-xs font-serif text-[#001839]">
+                            {p.name.slice(0, 1)}
+                          </div>
+                        )}
+                        <div>
+                          <p className="font-medium text-xs text-slate-800">{p.name}</p>
+                          <p className="text-[9px] text-slate-400 font-mono">
+                            {p.unit} {p.packSize ? '• ' + p.packSize : ''}
+                          </p>
+                        </div>
+                      </div>
+
+                      {!isMergeMode && (
+                        <div className="flex items-center gap-1">
+                          <button 
+                            type="button" 
+                            onClick={() => handleEditProductClick(p)} 
+                            className="p-1 text-[#001839] hover:bg-slate-200 rounded-md cursor-pointer"
+                            title="Edit"
+                          >
+                            <Edit3 strokeWidth={1.4} className="w-3.5 h-3.5" />
+                          </button>
+                          <button 
+                            type="button" 
+                            onClick={async () => { if (window.confirm(`ລຶບສິນຄ້າ ${p.name}?`)) await deleteDoc(doc(db, 'products', p.id)); }} 
+                            className="p-1 text-slate-400 hover:text-rose-500 rounded-md cursor-pointer"
+                            title="Delete"
+                          >
+                            <Trash2 strokeWidth={1.4} className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            <div className="pt-2 border-t border-slate-100">
+              <button 
+                onClick={() => { 
+                  setShowProductManager(false); 
+                  setEditingProductId(null);
+                  setIsMergeMode(false);
+                }} 
+                className="w-full h-9 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-serif uppercase tracking-wider rounded-xl cursor-pointer transition"
+              >
+                Close Catalog
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ================= 🌟 2. MODAL ເລືອກຊື່ສິນຄ້າທີ່ຈະ MERGE ================= */}
+      {showMergeConfirmModal && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs">
+          <div className="bg-white w-full max-w-md rounded-3xl p-5 sm:p-6 shadow-2xl border border-slate-200 space-y-4">
+            
+            <div className="flex justify-between items-center border-b border-slate-100 pb-2.5">
+              <div className="flex items-center gap-2">
+                <Layers strokeWidth={1.4} className="w-5 h-5 text-amber-600" />
+                <h3 className="text-sm font-serif tracking-tight text-[#001839] uppercase font-bold">
+                  Merge Duplicates (ຮວມສິນຄ້າ)
+                </h3>
+              </div>
+              <button onClick={() => setShowMergeConfirmModal(false)} className="text-slate-400">
+                <X strokeWidth={1.4} className="w-4 h-4" />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-600">
+              ທ່ານກຳລັງຈະຮວມສິນຄ້າ <strong>{selectedMergeProductIds.length}</strong> ລາຍການໃຫ້ເປັນອັນດຽວ. ປະຫວັດການຈັດຊື້ທັງໝົດຈະຖືກໂອນມາຫາສິນຄ້ານີ້.
+            </p>
+
+            {/* ເລືອກວ່າຈະຂຽນຊື່ສິນຄ້າແບບໃດ */}
+            <div className="space-y-2">
+              <label className="text-[10px] font-serif uppercase tracking-wider text-[#001839] font-bold block">
+                ເລືອກຊື່ສິນຄ້າຫຼັກທີ່ຕ້ອງການຮັກສາໄວ້:
+              </label>
+
+              {/* ຕົວເລືອກຈາກຊື່ສິນຄ້າເດີມ */}
+              <div className="space-y-1.5 max-h-36 overflow-y-auto">
+                {selectedMergeProductIds.map(id => {
+                  const p = products.find(prod => prod.id === id);
+                  if (!p) return null;
+
+                  return (
+                    <label 
+                      key={id}
+                      className={`p-2.5 rounded-xl border flex items-center gap-2 cursor-pointer transition ${
+                        customMergeName === p.name ? 'bg-[#001839] text-white border-[#001839]' : 'bg-slate-50 border-slate-200 hover:bg-slate-100'
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="masterProductName"
+                        checked={customMergeName === p.name}
+                        onChange={() => setCustomMergeName(p.name)}
+                        className="cursor-pointer"
+                      />
+                      <span className="text-xs font-medium">{p.name}</span>
+                    </label>
+                  );
+                })}
+              </div>
+
+              {/* ພິມຊື່ໃໝ່ຕາມໃຈ */}
+              <div className="pt-1 space-y-1">
+                <span className="text-[9.5px] text-slate-400 font-serif">ຫຼື ພິມຕັ້ງຊື່ໃໝ່ທີ່ຕ້ອງການ:</span>
+                <input
+                  type="text"
+                  placeholder="ພິມຊື່ສິນຄ້າໃໝ່..."
+                  value={customMergeName}
+                  onChange={e => setCustomMergeName(e.target.value)}
+                  className="w-full h-8.5 px-3 rounded-xl bg-slate-50 border border-slate-200 text-xs font-medium text-[#001839] outline-none"
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowMergeConfirmModal(false)}
+                className="flex-1 h-9 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-serif uppercase tracking-wider rounded-xl cursor-pointer"
+              >
+                ຍົກເລີກ
+              </button>
+              <button
+                type="button"
+                disabled={mergeLoading}
+                onClick={handleExecuteMerge}
+                className="flex-1 h-9 bg-amber-600 hover:bg-amber-700 text-white text-xs font-serif uppercase tracking-wider rounded-xl cursor-pointer transition shadow-xs"
+              >
+                {mergeLoading ? 'ກຳລັງ Merge...' : 'ຢືນຢັນການ Merge'}
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* Modal Suppliers Directory */}
       {showSupplierModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
           <div className="bg-white w-full max-w-md rounded-3xl p-5 shadow-2xl border border-slate-200 space-y-4">
@@ -1279,56 +1662,12 @@ export default function Suppliers({ selectedBranch = 'branch_1' }: { selectedBra
         </div>
       )}
 
-      {showProductManager && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
-          <div className="bg-white w-full max-w-2xl rounded-3xl p-5 shadow-2xl border border-slate-200 space-y-3.5 max-h-[90vh] flex flex-col">
-            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
-              <h3 className="text-sm font-serif tracking-tight text-[#001839] uppercase">Product Catalog</h3>
-              <button onClick={() => { setShowProductManager(false); setEditingProductId(null); }} className="cursor-pointer text-slate-400"><X strokeWidth={1.4} className="w-4 h-4" /></button>
-            </div>
-            <form onSubmit={handleSaveProduct} className="p-3 bg-slate-50 rounded-2xl border border-slate-200 space-y-2.5">
-              <div className="grid grid-cols-12 gap-2 items-center">
-                <div className="col-span-3">
-                  <input type="file" ref={prodImgInputRef} accept="image/*" onChange={e => e.target.files?.[0] && processProductImageFile(e.target.files[0])} className="hidden" id="pm-upload" />
-                  <label htmlFor="pm-upload" className="w-full h-20 rounded-xl border border-dashed border-slate-300 flex flex-col items-center justify-center cursor-pointer bg-white">
-                    {prodFormImageBase64 ? <img src={prodFormImageBase64} alt="" className="w-full h-full object-contain p-1" /> : <ImagePlus strokeWidth={1.4} className="w-4 h-4 text-[#001839]" />}
-                  </label>
-                </div>
-                <div className="col-span-9 space-y-1.5">
-                  <input type="text" required placeholder="Product Name..." value={prodFormName} onChange={e => setProdFormName(e.target.value)} className="w-full h-8 px-2.5 rounded-lg bg-white border border-slate-200 text-xs text-[#001839]" />
-                  <div className="flex gap-2">
-                    <input type="text" placeholder="Pack size" value={prodFormPackSize} onChange={e => setProdFormPackSize(e.target.value)} className="flex-1 h-8 px-2 rounded-lg bg-white border border-slate-200 text-xs text-[#001839]" />
-                    <input type="text" placeholder="UNIT" value={prodFormUnit} onChange={e => setProdFormUnit(e.target.value)} className="w-20 h-8 px-2 rounded-lg bg-white border border-slate-200 text-xs text-center font-serif text-[#001839]" />
-                    <button type="submit" disabled={prodSaving} className="px-4 h-8 bg-[#001839] text-white rounded-lg text-xs font-serif uppercase tracking-wider cursor-pointer">{prodSaving ? '...' : '+ Add'}</button>
-                  </div>
-                </div>
-              </div>
-            </form>
-            <div className="flex-1 overflow-y-auto space-y-1.5 pr-1">
-              {products.map(p => (
-                <div key={p.id} className="p-2.5 bg-slate-50 rounded-xl flex items-center justify-between border border-slate-100">
-                  <div className="flex items-center gap-2.5">
-                    {p.imageUrl ? <img src={p.imageUrl} alt="" className="w-8 h-8 object-contain rounded-md border border-slate-200 bg-white" /> : <div className="w-8 h-8 rounded-md bg-slate-200 flex items-center justify-center text-xs font-serif text-[#001839]">{p.name.slice(0, 1)}</div>}
-                    <div><p className="font-medium text-xs text-slate-800">{p.name}</p><p className="text-[9px] text-slate-400 font-mono">{p.unit} {p.packSize ? '• ' + p.packSize : ''}</p></div>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <button type="button" onClick={() => handleEditProductClick(p)} className="p-1 text-[#001839] hover:bg-slate-200 rounded-md cursor-pointer"><Edit3 strokeWidth={1.4} className="w-3.5 h-3.5" /></button>
-                    <button type="button" onClick={async () => { if (window.confirm('Delete?')) await deleteDoc(doc(db, 'products', p.id)); }} className="p-1 text-slate-400 hover:text-rose-500 rounded-md cursor-pointer"><Trash2 strokeWidth={1.4} className="w-3.5 h-3.5" /></button>
-                  </div>
-                </div>
-              ))}
-            </div>
-            <button onClick={() => { setShowProductManager(false); setEditingProductId(null); }} className="w-full h-9 bg-slate-100 text-slate-800 text-xs font-serif uppercase tracking-wider rounded-xl cursor-pointer">Close</button>
-          </div>
-        </div>
-      )}
-
-      {/* Preview Big Image Modal */}
+      {/* Preview Full Image Modal */}
       {previewImageUrl && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs">
           <div className="bg-white p-4 rounded-3xl max-w-2xl max-h-[90vh] flex flex-col gap-2 border border-slate-200 shadow-2xl">
             <div className="flex justify-between items-center border-b border-slate-100 pb-2">
-              <span className="text-xs font-serif tracking-wider text-[#001839] uppercase">Image Preview</span>
+              <span className="text-xs font-serif tracking-wider text-[#001839] uppercase font-bold">Image Preview</span>
               <button onClick={() => setPreviewImageUrl(null)} className="cursor-pointer text-slate-400"><X strokeWidth={1.4} className="w-4 h-4" /></button>
             </div>
             <img src={previewImageUrl} alt="Preview" className="max-h-[75vh] object-contain rounded-xl" />
