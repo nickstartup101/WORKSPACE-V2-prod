@@ -1,6 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { auth, db } from './firebase';
-import { signOut, onAuthStateChanged, signInWithEmailAndPassword, User } from 'firebase/auth';
+import { 
+  signOut, 
+  onAuthStateChanged, 
+  signInWithEmailAndPassword, 
+  GoogleAuthProvider, 
+  signInWithPopup, 
+  User 
+} from 'firebase/auth';
 import { doc, getDoc, onSnapshot, collection, query, orderBy } from 'firebase/firestore';
 import { 
   LayoutDashboard, 
@@ -17,7 +24,6 @@ import {
   ShieldCheck,
   Menu,
   X,
-  Lock,
   Mail,
   KeyRound,
   ArrowRight,
@@ -41,7 +47,7 @@ export default function App() {
   const [userRole, setUserRole] = useState<'admin' | 'manager' | 'staff'>('admin');
   const [activeTab, setActiveTab] = useState<TabType>('dashboard');
   
-  // Login Form States (ສຳລັບເຂົ້າສູ່ລະບົບຢ່າງປອດໄພ)
+  // Login Form States
   const [loginEmail, setLoginEmail] = useState<string>('tonickbouddasien@gmail.com');
   const [loginPassword, setLoginPassword] = useState<string>('');
   const [loginError, setLoginError] = useState<string>('');
@@ -88,7 +94,29 @@ export default function App() {
     return () => unsubBranch();
   }, []);
 
-  // 3. ຟັງຊັນ Login ເຂົ້າສູ່ລະບົບ
+  // 🌟 3. ຟັງຊັນ LOGIN ດ້ວຍ GOOGLE ACCOUNT (1 ຄລິກ)
+  const handleGoogleSignIn = async () => {
+    try {
+      setLoginLoading(true);
+      setLoginError('');
+      const provider = new GoogleAuthProvider();
+      // ບັງຄັບໃຫ້ເລືອກບັນຊີ
+      provider.setCustomParameters({ prompt: 'select_account' });
+      await signInWithPopup(auth, provider);
+    } catch (err: any) {
+      if (err.code === 'auth/operation-not-allowed') {
+        setLoginError('ກະລຸນາເປີດໃຊ້ງານ Google Sign-In ໃນ Firebase Console ➔ Authentication ➔ Sign-in method ກ່ອນ!');
+      } else if (err.code === 'auth/popup-closed-by-user') {
+        setLoginError('ທ່ານໄດ້ປິດໜ້າຕ່າງ Google Login');
+      } else {
+        setLoginError(err.message);
+      }
+    } finally {
+      setLoginLoading(false);
+    }
+  };
+
+  // 4. ຟັງຊັນ Login ດ້ວຍ Email & Password
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!loginEmail.trim() || !loginPassword.trim()) {
@@ -100,9 +128,12 @@ export default function App() {
       setLoginLoading(true);
       setLoginError('');
       await signInWithEmailAndPassword(auth, loginEmail.trim(), loginPassword.trim());
-      // ເມື່ອ Login ສຳເລັດ onAuthStateChanged ຈະປົດລັອກໜ້າແອັບທັນທີ
     } catch (err: any) {
-      setLoginError('ອີເມວ ຫຼື ລະຫັດຜ່ານບໍ່ຖືກຕ້ອງ! (' + err.message + ')');
+      if (err.code === 'auth/operation-not-allowed') {
+        setLoginError('ກະລຸນາເປີດໃຊ້ງານ Email/Password ໃນ Firebase Console ➔ Authentication ➔ Sign-in method!');
+      } else {
+        setLoginError('ອີເມວ ຫຼື ລະຫັດຜ່ານບໍ່ຖືກຕ້ອງ! (' + err.message + ')');
+      }
     } finally {
       setLoginLoading(false);
     }
@@ -135,17 +166,16 @@ export default function App() {
   const allowedNavItems = allNavItems.filter(item => item.roles.includes(userRole));
 
   // =========================================================================
-  // 🌟 ໜ້າຈໍ LUXURY EDITORIAL SIGN-IN (ສະແດງເມື່ອຍັງບໍ່ທັນໄດ້ Login)
+  // 🌟 ໜ້າຈໍ LOGIN (ມີປຸ່ມ GOOGLE SIGN-IN ຢ່າງຫຼູຫຼາ)
   // =========================================================================
   if (!authChecking && !currentUser) {
     return (
       <div className="min-h-screen w-screen bg-[#001839] flex items-center justify-center p-4 font-sans text-white relative overflow-hidden">
         
-        {/* Background Decorative Rings */}
         <div className="absolute w-[500px] h-[500px] rounded-full border border-white/5 -top-20 -right-20 pointer-events-none" />
         <div className="absolute w-[350px] h-[350px] rounded-full border border-white/5 -bottom-10 -left-10 pointer-events-none" />
 
-        <div className="w-full max-w-md bg-white rounded-3xl p-8 text-slate-800 shadow-2xl space-y-6 relative z-10 border border-slate-200">
+        <div className="w-full max-w-md bg-white rounded-3xl p-7 sm:p-8 text-slate-800 shadow-2xl space-y-6 relative z-10 border border-slate-200">
           
           {/* Brand Header */}
           <div className="text-center space-y-1">
@@ -160,11 +190,38 @@ export default function App() {
             </p>
           </div>
 
-          {/* Login Form */}
-          <form onSubmit={handleLoginSubmit} className="space-y-4">
-            
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-serif uppercase tracking-wider text-[#001839] font-bold block">
+          {/* 🌟 ປຸ່ມ SIGN IN WITH GOOGLE (ໂດດເດັ່ນ 1-CLICK LOGIN) */}
+          <button
+            type="button"
+            disabled={loginLoading}
+            onClick={handleGoogleSignIn}
+            className="w-full h-12 bg-white hover:bg-slate-50 text-slate-700 font-medium text-xs rounded-2xl border border-slate-300 shadow-sm flex items-center justify-center gap-3 transition cursor-pointer hover:border-slate-400 disabled:opacity-50"
+          >
+            {/* SVG Logo ຂອງ Google */}
+            <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24">
+              <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+              <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+              <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
+              <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
+            </svg>
+            <span className="font-serif tracking-wider uppercase text-[11px] text-[#001839] font-bold">
+              Sign In With Google
+            </span>
+          </button>
+
+          {/* Divider */}
+          <div className="flex items-center gap-3">
+            <div className="flex-1 h-[1px] bg-slate-200" />
+            <span className="text-[10px] font-serif uppercase tracking-widest text-slate-400">
+              ຫຼື ເຂົ້າດ້ວຍ Email
+            </span>
+            <div className="flex-1 h-[1px] bg-slate-200" />
+          </div>
+
+          {/* Email/Password Form */}
+          <form onSubmit={handleLoginSubmit} className="space-y-3.5">
+            <div className="space-y-1">
+              <label className="text-[9.5px] font-serif uppercase tracking-wider text-[#001839] font-bold block">
                 Email Address
               </label>
               <div className="relative">
@@ -174,14 +231,14 @@ export default function App() {
                   placeholder="name@gmail.com"
                   value={loginEmail}
                   onChange={e => setLoginEmail(e.target.value)}
-                  className="w-full h-11 pl-10 pr-3 rounded-2xl bg-slate-50 border border-slate-200 text-xs font-sans text-[#001839] outline-none focus:border-[#001839] transition"
+                  className="w-full h-10 pl-9 pr-3 rounded-xl bg-slate-50 border border-slate-200 text-xs text-[#001839] outline-none focus:border-[#001839]"
                 />
-                <Mail strokeWidth={1.4} className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5 pointer-events-none" />
+                <Mail strokeWidth={1.4} className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-3 pointer-events-none" />
               </div>
             </div>
 
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-serif uppercase tracking-wider text-[#001839] font-bold block">
+            <div className="space-y-1">
+              <label className="text-[9.5px] font-serif uppercase tracking-wider text-[#001839] font-bold block">
                 Password
               </label>
               <div className="relative">
@@ -191,14 +248,14 @@ export default function App() {
                   placeholder="••••••••"
                   value={loginPassword}
                   onChange={e => setLoginPassword(e.target.value)}
-                  className="w-full h-11 pl-10 pr-3 rounded-2xl bg-slate-50 border border-slate-200 text-xs font-sans text-[#001839] outline-none focus:border-[#001839] transition"
+                  className="w-full h-10 pl-9 pr-3 rounded-xl bg-slate-50 border border-slate-200 text-xs text-[#001839] outline-none focus:border-[#001839]"
                 />
-                <KeyRound strokeWidth={1.4} className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5 pointer-events-none" />
+                <KeyRound strokeWidth={1.4} className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-3 pointer-events-none" />
               </div>
             </div>
 
             {loginError && (
-              <div className="p-3 bg-rose-50 border border-rose-200 rounded-2xl flex items-center gap-2 text-rose-700 text-xs font-sans">
+              <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl flex items-center gap-2 text-rose-700 text-xs font-sans">
                 <AlertCircle strokeWidth={1.4} className="w-4 h-4 shrink-0 text-rose-600" />
                 <span className="leading-tight">{loginError}</span>
               </div>
@@ -207,16 +264,16 @@ export default function App() {
             <button
               type="submit"
               disabled={loginLoading}
-              className="w-full h-12 bg-[#001839] hover:bg-[#00285d] text-white rounded-2xl text-xs font-serif uppercase tracking-widest transition shadow-md flex items-center justify-center gap-2 cursor-pointer mt-2 disabled:opacity-50"
+              className="w-full h-11 bg-[#001839] hover:bg-[#00285d] text-white rounded-xl text-xs font-serif uppercase tracking-widest transition shadow-xs flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
             >
-              <span>{loginLoading ? 'Authenticating...' : 'Sign In To Workspace'}</span>
-              <ArrowRight strokeWidth={1.4} className="w-4 h-4" />
+              <span>{loginLoading ? 'Authenticating...' : 'Sign In With Password'}</span>
+              <ArrowRight strokeWidth={1.4} className="w-3.5 h-3.5" />
             </button>
           </form>
 
-          {/* Security Assurance Footer */}
+          {/* Security Footer */}
           <div className="pt-2 border-t border-slate-100 text-center">
-            <span className="inline-flex items-center gap-1.5 text-[9.5px] font-serif uppercase tracking-wider text-slate-400">
+            <span className="inline-flex items-center gap-1.5 text-[9px] font-serif uppercase tracking-wider text-slate-400">
               <ShieldCheck strokeWidth={1.4} className="w-3.5 h-3.5 text-emerald-600" />
               End-to-End Encrypted Cloud Database
             </span>
@@ -228,7 +285,7 @@ export default function App() {
   }
 
   // =========================================================================
-  // 🌟 MAIN WORKSPACE INTERFACE (ສະແດງເມື່ອ Login ສຳເລັດແລ້ວ)
+  // 🌟 MAIN WORKSPACE INTERFACE (ຫຼັງຈາກ LOGIN ສຳເລັດ)
   // =========================================================================
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-slate-100/90 text-slate-800 font-sans">
@@ -287,9 +344,13 @@ export default function App() {
         {/* User Footer ສະແດງບັນຊີເຈົ້າຂອງຮ້ານ */}
         <div className="p-3 border-t border-white/10 bg-[#00132e]/60 space-y-2.5">
           <div className="flex items-center gap-2.5 px-1.5">
-            <div className="w-8 h-8 rounded-xl bg-orange-500 text-white font-serif text-sm font-bold flex items-center justify-center shrink-0 border border-orange-400/30">
-              {currentUser?.displayName ? currentUser.displayName.slice(0, 1).toUpperCase() : 'T'}
-            </div>
+            {currentUser?.photoURL ? (
+              <img src={currentUser.photoURL} alt="" className="w-8 h-8 rounded-xl object-cover border border-white/20" />
+            ) : (
+              <div className="w-8 h-8 rounded-xl bg-orange-500 text-white font-serif text-sm font-bold flex items-center justify-center shrink-0 border border-orange-400/30">
+                {currentUser?.displayName ? currentUser.displayName.slice(0, 1).toUpperCase() : 'T'}
+              </div>
+            )}
             <div className="overflow-hidden">
               <p className="text-[11px] font-medium text-white truncate">
                 {currentUser?.displayName || currentUser?.email || 'Tonick bouddasien'}
